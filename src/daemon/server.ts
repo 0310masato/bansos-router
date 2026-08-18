@@ -34,7 +34,8 @@ const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
 const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
 
 function validatePath(rawUrl: string): boolean {
-  const cleaned = rawUrl.replace(/^\/+/, "");
+  const pathname = rawUrl.split("?")[0] ?? "/";
+  const cleaned = pathname.replace(/^\/+/, "");
   const withSlash = `/${cleaned}`;
   if (!ALLOWED_PATH_PATTERN.test(withSlash)) return false;
   if (withSlash.includes("..")) return false;
@@ -299,11 +300,12 @@ export function createServer(opts: ServerOptions): http.Server {
       return;
     }
 
-    const url = req.url ?? "/";
-    if (!validatePath(url)) {
+    const rawUrl = req.url ?? "/";
+    if (!validatePath(rawUrl)) {
       sendJson(res, 403, { error: { message: "forbidden" } });
       return;
     }
+    const url = rawUrl.split("?")[0] ?? "/";
 
 
     if (method === "GET" && (url === "/v1/models" || url === "/v1/models/")) {
@@ -314,6 +316,10 @@ export function createServer(opts: ServerOptions): http.Server {
           object: "model",
           created: 0,
           owned_by: "bansos",
+          name: m.name,
+          context_window: m.contextWindow,
+          max_tokens: m.maxTokens,
+          reasoning: m.reasoning,
         })),
       });
       return;

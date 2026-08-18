@@ -12,6 +12,7 @@ interface ModelItem {
   name?: string;
   context_window?: number;
   max_tokens?: number;
+  reasoning?: boolean;
 }
 
 let spawnedByExtension = false;
@@ -74,14 +75,14 @@ export default async function (pi: ExtensionAPI) {
 
   if (models.length === 0) {
     models = [
-      { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash", context_window: 1000000, max_tokens: 384000 },
-      { id: "mimo-v2.5-free", name: "Mimo V2.5 Free", context_window: 1048576, max_tokens: 131072 },
-      { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", context_window: 1000000, max_tokens: 65536 },
-      { id: "big-pickle", name: "Big Pickle", context_window: 200000, max_tokens: 32000 },
-      { id: "laguna-s-2.1-free", name: "Laguna S 2.1", context_window: 262144, max_tokens: 32768 },
-      { id: "default", name: "LLM7 Default", context_window: 128000, max_tokens: 8000 },
-      { id: "fast", name: "LLM7 Fast", context_window: 128000, max_tokens: 8000 },
-      { id: "kilo-auto/free", name: "Kilo Auto Free", context_window: 256000, max_tokens: 10000 },
+      { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash", context_window: 1000000, max_tokens: 384000, reasoning: true },
+      { id: "mimo-v2.5-free", name: "Mimo V2.5 Free", context_window: 1048576, max_tokens: 131072, reasoning: false },
+      { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", context_window: 1000000, max_tokens: 65536, reasoning: true },
+      { id: "big-pickle", name: "Big Pickle", context_window: 200000, max_tokens: 32000, reasoning: true },
+      { id: "laguna-s-2.1-free", name: "Laguna S 2.1", context_window: 262144, max_tokens: 32768, reasoning: true },
+      { id: "default", name: "LLM7 Default", context_window: 128000, max_tokens: 8000, reasoning: false },
+      { id: "fast", name: "LLM7 Fast", context_window: 128000, max_tokens: 8000, reasoning: false },
+      { id: "kilo-auto/free", name: "Kilo Auto Free", context_window: 256000, max_tokens: 10000, reasoning: false },
     ];
   }
 
@@ -93,10 +94,10 @@ export default async function (pi: ExtensionAPI) {
     models: models.map((m) => ({
       id: m.id,
       name: m.name ?? m.id,
-      reasoning: m.id.includes("deepseek") || m.id.includes("ultra") || m.id.includes("pickle") || m.id.includes("super") || m.id.includes("lightning") || m.id.includes("nano"),
+      reasoning: m.reasoning ?? (m.id.includes("deepseek") || m.id.includes("ultra") || m.id.includes("pickle") || m.id.includes("super") || m.id.includes("lightning") || m.id.includes("nano")),
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: m.context_window ?? 200000,
+      contextWindow: m.context_window ?? 256000,
       maxTokens: m.max_tokens ?? 32000,
     })),
   });
@@ -115,9 +116,9 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
-  // auto kill daemon on pi shutdown ONLY if this extension session spawned it
-  pi.on("session_shutdown", async () => {
-    if (spawnedByExtension) {
+  // auto kill daemon only when pi completely quits, not on session switch (/resume /new)
+  pi.on("session_shutdown", async (event) => {
+    if (spawnedByExtension && event.reason === "quit") {
       try {
         spawn("bansos", ["stop"], { stdio: "ignore", detached: true }).unref();
       } catch {
