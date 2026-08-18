@@ -29,6 +29,10 @@ function parseArgs(argv: string[]): CliArgs {
     if (arg === "--port" || arg === "-p") args.port = Number(argv[++i]);
     else if (arg === "--bind") args.bind = argv[++i];
     else if (arg === "--bg") args.bg = true;
+    else if (arg === "--version" || arg === "-v") {
+      console.log("0.1.0");
+      process.exit(0);
+    }
     else if (arg === "--help" || arg === "-h") {
       console.log(`bansosd — local free-model router daemon
 

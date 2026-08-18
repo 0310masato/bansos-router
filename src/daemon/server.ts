@@ -31,7 +31,7 @@ export interface ServerOptions {
 const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
 
   // whitelisted inbound paths only; traversal/encoded variants rejected
-const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/status\/?$/;
+const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
 
 function validatePath(rawUrl: string): boolean {
   const cleaned = rawUrl.replace(/^\/+/, "");
@@ -337,6 +337,22 @@ export function createServer(opts: ServerOptions): http.Server {
         models: catalog.models.map((m) => m.id),
       };
       sendJson(res, 200, payload);
+      return;
+    }
+
+    if (method === "POST" && url === "/bansos/refresh") {
+      void catalog
+        .refresh()
+        .then((report) => {
+          sendJson(res, 200, {
+            refreshed: true,
+            modelCount: catalog.models.length,
+            alive: report.alive,
+          });
+        })
+        .catch((err: unknown) => {
+          sendJson(res, 500, { error: { message: `refresh failed: ${String(err)}` } });
+        });
       return;
     }
 

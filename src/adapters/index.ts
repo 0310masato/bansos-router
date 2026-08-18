@@ -84,7 +84,7 @@ function opencodeAdapter(): HarnessAdapter {
     render(ctx: SetupContext): ConfigWrite[] {
       const provider = {
         bansos: {
-          npm: "@opencode-ai/ai/providers/openai-compatible",
+          npm: "@ai-sdk/openai-compatible",
           options: { baseURL: ctx.baseUrl },
           models: { [ctx.defaultModel]: {} },
         },

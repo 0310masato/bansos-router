@@ -22,7 +22,7 @@ export function createLocalUpstream(cfg: LocalUpstreamConfig): Upstream {
     chatUrl: `${base}/chat/completions`,
 
     async fetchCatalog(): Promise<ModelDef[] | null> {
-      // TODO(M0): GET `${base}/models` (bearer when cfg.apiKey is set); map
+      // TODO(M5): GET `${base}/models` (bearer when cfg.apiKey is set); map
       // entries to ModelDef with conservative defaults, `source: "local"`.
       return null;
     },

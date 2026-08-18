@@ -22,15 +22,3 @@ export function parseChatTurn(body: unknown): ParseResult<InternalTurn> {
     },
   };
 }
-
-// render a non-streaming chat.completion response from an upstream result
-export function renderChatCompletion(): unknown {
-  // TODO(M0): { id, object: "chat.completion", choices: [...], usage }
-  return null;
-}
-
-// render one streaming chat.completion.chunk delta
-export function renderChatChunk(): unknown {
-  // TODO(M0): choices[0].delta { content | tool_calls | reasoning }, finish_reason
-  return null;
-}

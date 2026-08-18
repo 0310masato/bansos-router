@@ -139,20 +139,29 @@ function findDaemonPids(statePid: number | null): number[] {
     if (pids.has(pid)) continue;
     try {
       const args = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0").filter(Boolean);
-      const script = args[1] ?? "";
-      const joined = args.join(" ");
-      if (joined.includes("dist/daemon/index.js")) pids.add(pid); // pre-merge build
-      else if (
-        joined.includes("dist/cli/index.js") &&
-        (args.includes("daemon") || args.includes("start") || path.basename(script) === "bansosd")
-      ) {
-        pids.add(pid);
-      }
+      if (isDaemonCmdline(args)) pids.add(pid);
     } catch {
       // process vanished mid-scan
     }
   }
   return [...pids];
+}
+
+// a process is one of our daemons if it runs the bansos binary in daemon mode.
+// the binary may be the npm bin (…/bansos, …/bansosd) or the repo build
+// (dist/cli/index.js); the hidden "daemon" subcommand marks spawned children.
+function isDaemonCmdline(args: string[]): boolean {
+  const script = path.basename(args[1] ?? "");
+  const cmd = args[2];
+  if (script === "bansos" || script === "bansosd") {
+    return (
+      cmd === undefined ||
+      cmd === "daemon" ||
+      cmd === "start" ||
+      cmd?.startsWith("--")
+    );
+  }
+  return args.includes("daemon") || args.join(" ").includes("dist/daemon/index.js");
 }
 
 async function runStop(): Promise<number> {
@@ -205,9 +214,10 @@ async function runStatusOrModels(cmd: "status" | "models" | "refresh"): Promise<
       for (const m of body.data) console.log(m.id);
       return 0;
     }
-    // refresh
-    // TODO(M0): POST /bansos/refresh once the daemon exposes it.
-    console.log("refresh: not wired yet (lands with M0 upstream fetching)");
+    // refresh: ask the daemon to re-run health checks now
+    const res = await fetch(`${base}/bansos/refresh`, { method: "POST" });
+    const body = (await res.json()) as { modelCount: number; alive: number };
+    console.log(`refreshed: ${body.modelCount} model(s), ${body.alive} alive`);
     return 0;
   } catch {
     console.error(`bansos: daemon not reachable at ${base} — start it with "bansos start"`);

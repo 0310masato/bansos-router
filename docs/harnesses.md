@@ -26,7 +26,7 @@ Legend: 🟢 config-only · 🟡 config + small adapter · 🔴 not supported (v
 | **pi** | OpenAI Chat | extension (`registerProvider`) | 🟡 | Only code adapter: spawn daemon + register `bansos` provider + `/bansos` command (port of pi-bansos) |
 | **Claude Code** | Anthropic Messages | `~/.claude/settings.json` (`env`) | 🟢 | `ANTHROPIC_BASE_URL=http://127.0.0.1:17070` + `ANTHROPIC_AUTH_TOKEN=bansos` + model mappings |
 | **Aider** | OpenAI Chat | env / `aider.conf.yml` | 🟢 | `OPENAI_API_BASE=http://127.0.0.1:17070/v1`, `OPENAI_API_KEY=bansos`, `AIDER_MODEL=<id>` |
-| **OpenCode** | OpenAI Chat | `~/.config/opencode/opencode.json` | 🟢 | Custom provider with `@opencode-ai/ai/providers/openai-compatible`, `baseURL` |
+| **OpenCode** | OpenAI Chat | `~/.config/opencode/opencode.json` | 🟢 | Custom provider with `@ai-sdk/openai-compatible`, `baseURL` |
 | **Codex CLI** | OpenAI Responses | `~/.codex/config.toml` | 🟢 | `[model_providers.bansos] base_url`, `wire_api = "responses"` (⚠️ chat unsupported ≥0.122) |
 | **Hermes (Nous)** | OpenAI Chat | `~/.hermes/config.yaml` | 🟢 | `model.provider: custom` + `model.base_url` |
 | **OpenClaw** | OpenAI Chat or Anthropic | `~/.openclaw/config.json` / agent `models.json` | 🟢 | `models.providers.<id>.baseUrl`; can pick either wire |
@@ -122,7 +122,7 @@ export AIDER_MODEL=<id>
 
 ```jsonc
 { "provider": {
-    "bansos": { "npm": "@opencode-ai/ai/providers/openai-compatible",
+    "bansos": { "npm": "@ai-sdk/openai-compatible",
                 "options": { "baseURL": "http://127.0.0.1:17070/v1" },
                 "models": { "<id>": {} } } } }
 ```
