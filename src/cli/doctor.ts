@@ -16,7 +16,7 @@ export async function runDoctor(_argv: string[]): Promise<number> {
     console.log(`✓ daemon      ok at ${base} (${body.modelCount ?? "?"} models)`);
   } catch {
     console.error(`✗ daemon      not reachable at ${base}`);
-    console.error(`  fix: run "bansosd" in another terminal`);
+    console.error(`  fix: run "bansos start" (or "bansosd") in another terminal`);
     failures++;
   }
 

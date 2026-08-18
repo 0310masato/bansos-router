@@ -206,7 +206,7 @@ pi.registerCommand("bansos", { /* status / relay toggles */ });
 npm i -g bansos-router
 bansos setup aider --model deepseek-v4-flash-free
 # writes OPENAI_API_BASE etc. (or shell rc)
-bansosd            # start daemon (or: bansos doctor → "start it?" → yes)
+bansos start       # start daemon (or: bansos doctor → "start it?" → yes)
 aider              # works
 ```
 

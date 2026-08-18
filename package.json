@@ -9,7 +9,7 @@
   },
   "bin": {
     "bansos": "dist/cli/index.js",
-    "bansosd": "dist/daemon/index.js"
+    "bansosd": "dist/cli/index.js"
   },
   "files": [
     "dist",
@@ -18,11 +18,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build:cli && npm run build:daemon",
-    "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=dist/cli/index.js",
-    "build:daemon": "esbuild src/daemon/index.ts --bundle --platform=node --format=esm --outfile=dist/daemon/index.js",
+    "build": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=dist/cli/index.js",
     "dev": "tsx src/cli/index.ts",
-    "dev:daemon": "tsx src/daemon/index.ts",
+    "dev:daemon": "tsx src/cli/index.ts daemon",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/stream.test.ts test/rate-limit.test.ts",
     "prepare": "npm run build"

@@ -33,7 +33,7 @@ function parseArgs(argv: string[]): CliArgs {
       console.log(`bansosd — local free-model router daemon
 
 Usage:
-  bansosd [--port N] [--bind H] [--bg]
+  bansos start [--port N] [--bind H] [--bg]   (or: bansosd [--port N] [--bind H] [--bg])
 
 Options:
   --port N    listen port (default: ${DEFAULT_PORT}, auto-bumps up to ${MAX_PORT})
@@ -86,8 +86,8 @@ function startServer(port: number, bind: string): Promise<{ server: http.Server;
   });
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+async function main(argv: string[]): Promise<void> {
+  const args = parseArgs(argv[0] === "daemon" ? argv.slice(1) : argv);
   const log = createLogger({ prefix: "bansosd" });
 
   const config = loadConfig();
@@ -132,7 +132,6 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
-  createLogger({ prefix: "bansosd" }).error("fatal", { error: String(err) });
-  process.exit(1);
-});
+export async function runDaemon(argv: string[]): Promise<void> {
+  await main(argv);
+}

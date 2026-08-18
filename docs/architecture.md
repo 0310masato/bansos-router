@@ -23,6 +23,7 @@ harness.**
                                 │  3 wire protocols
                 ┌───────────────▼────────────────┐
                 │          bansosd (daemon)       │
+                │  run via: bansos start / --bg   │
                 │  local-only, 127.0.0.1:17070   │
                 │                                │
                 │  /v1/chat/completions  (OpenAI) │
@@ -86,9 +87,10 @@ harness.**
 
 ## 3. Components
 
-### 3.1 `bansosd` — the daemon (long-running)
+### 3.1 The daemon (long-running)
 
-The core server. Responsibilities:
+The core server, run via `bansos start` (foreground or `--bg`) or the
+`bansosd` alias bin. Responsibilities:
 
 | Concern | Design |
 |---|---|
@@ -113,7 +115,9 @@ The core server. Responsibilities:
 | `bansos relay url <URL>` / `use <URL>` / `list` / `remove <URL>` | Manage saved relays |
 | `bansos relay deploy` | Deploy a fresh Vercel relay (token used once, never stored) |
 | `bansos doctor` | Diagnose: port conflicts, upstream reachability, harness config validity |
-| `bansosd` | Start the daemon in the foreground (also the `bin` entry point) |
+| `bansos start [--bg]` | Start the daemon (foreground, or detached with `--bg`) |
+| `bansos stop` | Stop all running daemons (via `~/.bansos/state.json` + process scan) |
+| `bansosd` | Alias bin for the daemon (same entry file as `bansos`) |
 
 The CLI **does not require the daemon to be running** for setup/doctor
 operations — it writes configs that point at `http://127.0.0.1:17070/v1`.
@@ -142,9 +146,10 @@ only code adapter is the optional **pi extension** (reuses pi-bansos's
 
 - **Default bind is loopback only.** Listening on `0.0.0.0` is possible but
   explicitly discouraged and requires `BANSOS_BIND=0.0.0.0` opt-in.
-- Daemon lifecycle: started manually (`bansosd`) or spawned on demand by the
-  pi extension. A `bansos doctor` subcommand detects "daemon not running" and
-  offers to start it.
+- Daemon lifecycle: started manually (`bansos start`, or `bansosd`) or spawned
+  on demand by the pi extension. A `bansos doctor` subcommand detects "daemon
+  not running" and offers to start it. `bansos stop` kills every daemon
+  process (state.json pid + `/proc` scan for the daemon binary).
 
 ## 5. State & persistence
 
@@ -199,8 +204,8 @@ State files are plain JSON, never secret-bearing (keyless design).
 | State | JSON under `~/.bansos/`, **atomic writes** (temp file + rename) | Crash-safe, no DB, survives npm updates |
 | Logging | hand-rolled JSON-lines logger, quiet by default | Proxy doesn't need pino-grade observability |
 | Testing | `node:test` (+ `tsx` loader in dev) | Zero-dep; enough for unit + streaming integration tests |
-| Build | **esbuild** → one bundle per bin (`bin/bansos.js`, `bin/bansosd.js`) | Single-file entries, no runtime build dep; `tsx` only for dev |
-| Process mgmt | `bansosd` foreground; `--bg` = detached spawn + log file; `bansos status` = TCP health-check | No PID-file complexity |
+| Build | **esbuild** → one bundle (`dist/cli/index.js`); bins `bansos` + `bansosd` point at it | Single-file entry, no runtime build dep; `tsx` only for dev |
+| Process mgmt | `bansos start` foreground; `--bg` = detached spawn + log file; `bansos stop` = SIGTERM all daemon pids; `bansos status` = TCP health-check | `state.json` pid + `/proc` scan, no PID-file complexity |
 
 ### 7.3 Dependency budget
 
@@ -303,7 +308,7 @@ bansos-router/
 |---|---|---|
 | **M0 — Core daemon** | Port pi-bansos core: server, path guards, rate limit, catalog, OpenCode Zen upstream, health check, `/v1/chat/completions` + `/v1/models` | `curl http://127.0.0.1:17070/v1/chat/completions` streams a reply; only alive models listed |
 | **M1 — Anthropic wire** | `/v1/messages` translation (system, tools, thinking, SSE) | Claude Code works via `ANTHROPIC_BASE_URL` against bansosd |
-| **M2 — Setup CLI** | `bansos setup` for pi, Aider, OpenCode; `bansos status/models/doctor` | Fresh machine: `npm i -g` → `bansos setup aider` → aider works |
+| **M2 — Setup CLI** | `bansos setup` (9 harness adapters), `bansos start/stop`, `bansos status/models/doctor`, single `bansos` binary (+ `bansosd` alias) | Fresh machine: `npm i -g` → `bansos setup aider` → aider works |
 | **M3 — Responses wire** | `/v1/responses` translation | Codex CLI works via `wire_api = "responses"` |
 | **M4 — Relay UX** | `relay on/off/url/use/list/remove/deploy` + rotation | Rate-limit hit → relay on → back in business, no restart |
 | **M5 — More upstreams** | OpenRouter `:free`, Routeway, OVHcloud anonymous tier, FreeBuff via `freebuff-proxy` (token-based local gateway, relay off), periodic health refresh | Catalog grows without breaking `/v1/models` contract |
