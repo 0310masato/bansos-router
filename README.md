@@ -72,7 +72,7 @@ default `bansos setup` uses. Context and max output are token counts.
 
 | model id | reasoning | context | max output |
 |---|---|---|---|
-| `deepseek-v4-flash-free` | yes | 1M | 384k |
+| `deepseek-v4-flash-free` | yes | 1M | 131k |
 | `mimo-v2.5-free` | no | 1M | 131k |
 | `nemotron-3-ultra-free` | yes | 1M | 65k |
 | `big-pickle` | yes | 200k | 32k |
