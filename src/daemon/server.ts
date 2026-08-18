@@ -2,7 +2,13 @@ import http from "node:http";
 import { Readable } from "node:stream";
 import type { Logger } from "../logger";
 import { parseChatTurn } from "../protocols/openai-chat";
+import {
+  parseAnthropicRequest,
+  openAiCompletionToAnthropicMessage,
+  AnthropicStreamEncoder,
+} from "../protocols/anthropic";
 import { loadRelayState, relayFetch } from "../relay/egress";
+import { readSseStream } from "../protocols/stream";
 import type { RuntimeCatalog } from "./catalog";
 import type { RateLimiter } from "./rate-limit";
 
@@ -153,6 +159,118 @@ async function handleChat(
   }
 }
 
+// anthropic messages in -> translate to openai chat -> forward -> translate back
+async function handleAnthropic(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  catalog: RuntimeCatalog,
+  log: Logger,
+): Promise<void> {
+  let bodyText: string;
+  try {
+    bodyText = await readBody(req);
+  } catch {
+    sendAnthropicError(res, 413, "request body too large");
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    sendAnthropicError(res, 400, "invalid JSON body");
+    return;
+  }
+
+  const parsed = parseAnthropicRequest(body);
+  if (!parsed.ok) {
+    sendAnthropicError(res, 400, parsed.error);
+    return;
+  }
+
+  const model = catalog.resolve(parsed.value.model);
+  if (!model) {
+    sendAnthropicError(res, 400, `unknown model: ${parsed.value.model}`);
+    return;
+  }
+
+  const upstream = catalog.upstreamBySource(model.source);
+  if (!upstream) {
+    sendAnthropicError(res, 502, `no upstream for source: ${model.source}`);
+    return;
+  }
+
+  const chatBody = parsed.value.chatBody as Record<string, unknown>;
+  chatBody.model = model.id;
+  const headers = new Headers({
+    "content-type": "application/json",
+    ...upstream.requestHeaders(model),
+  });
+
+  log.info("anthropic → upstream", {
+    model: model.id,
+    upstream: upstream.id,
+    stream: parsed.value.stream,
+  });
+
+  try {
+    const relay = loadRelayState();
+    const upstreamRes = await relayFetch(relay, upstream.chatUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(chatBody),
+      duplex: "half",
+    });
+
+    if (!parsed.value.stream) {
+      const text = await upstreamRes.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        sendAnthropicError(res, 502, "invalid upstream response");
+        return;
+      }
+      const message = openAiCompletionToAnthropicMessage(json, model.id);
+      sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
+      return;
+    }
+
+    res.writeHead(upstreamRes.status, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+    });
+    const encoder = new AnthropicStreamEncoder();
+    if (upstreamRes.body) {
+      for await (const frame of readSseStream(upstreamRes.body)) {
+        if (frame.data === "[DONE]") {
+          for (const ev of encoder.close()) res.write(ev);
+          break;
+        }
+        let json: any;
+        try { json = JSON.parse(frame.data); } catch { continue; }
+        for (const ev of encoder.push(json, model.id)) res.write(ev);
+      }
+    }
+    res.end();
+  } catch (err) {
+    log.warn("upstream request failed", { error: String(err) });
+    sendAnthropicError(res, 502, "upstream request failed");
+  }
+}
+
+function sendAnthropicError(
+  res: http.ServerResponse,
+  status: number,
+  message: string,
+): void {
+  sendJson(res, status, {
+    type: "error",
+    error: { type: "invalid_request_error", message },
+  });
+}
+
 export function createServer(opts: ServerOptions): http.Server {
   const { catalog, rateLimiter, port, log, startedAt } = opts;
 
@@ -228,16 +346,20 @@ export function createServer(opts: ServerOptions): http.Server {
       return;
     }
 
+    if (method === "POST" && url === "/v1/messages") {
+      void handleAnthropic(req, res, catalog, log);
+      return;
+    }
+
     const notImplemented = (endpoint: string) =>
       sendJson(res, 501, {
         error: {
           message: `${endpoint} not implemented yet`,
-          hint: "milestone M1 (messages) / M3 (responses)",
+          hint: "milestone M3 (responses)",
         },
       });
 
-    if (url === "/v1/messages") notImplemented("POST /v1/messages");
-    else if (url === "/v1/responses") notImplemented("POST /v1/responses");
+    if (url === "/v1/responses") notImplemented("POST /v1/responses");
     else sendJson(res, 404, { error: { message: "not found" } });
   });
 }
