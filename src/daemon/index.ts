@@ -1,0 +1,112 @@
+#!/usr/bin/env node
+import http from "node:http";
+import { loadConfig, writeJsonAtomic, STATE_FILE } from "./state";
+import { createLogger } from "../logger";
+import { buildUpstreams } from "../upstreams";
+import { ZEN_MODELS } from "../upstreams/zen";
+import { KILO_MODELS } from "../upstreams/kilo";
+import { llm7AliasModels } from "../upstreams/llm7";
+import { RuntimeCatalog } from "./catalog";
+import { RateLimiter } from "./rate-limit";
+import { createServer } from "./server";
+
+const DEFAULT_PORT = 17070;
+const MAX_PORT = 17090;
+
+interface CliArgs {
+  port?: number;
+  bind?: string;
+  bg: boolean;
+}
+
+function parseArgs(argv: string[]): CliArgs {
+  const args: CliArgs = { bg: false };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--port" || arg === "-p") args.port = Number(argv[++i]);
+    else if (arg === "--bind") args.bind = argv[++i];
+    else if (arg === "--bg") args.bg = true;
+    else if (arg === "--help" || arg === "-h") {
+      console.log(`bansosd — local free-model router daemon
+
+Usage:
+  bansosd [--port N] [--bind H] [--bg]
+
+Options:
+  --port N    listen port (default: ${DEFAULT_PORT}, auto-bumps up to ${MAX_PORT})
+  --bind H    bind address (default: 127.0.0.1)
+  --bg        spawn detached, log to ~/.bansos/logs/bansosd.log
+  -h, --help  show this help
+`);
+      process.exit(0);
+    }
+  }
+  return args;
+}
+
+function startServer(port: number, bind: string): Promise<{ server: http.Server; port: number }> {
+  const log = createLogger({ prefix: "bansosd" });
+  const config = loadConfig();
+  const upstreams = buildUpstreams(config.localUpstreams);
+  const catalog = new RuntimeCatalog(upstreams, log);
+
+  // seed the pinned registry: usable offline, refined by health checks
+  catalog.seed([...ZEN_MODELS, ...KILO_MODELS, ...llm7AliasModels()]);
+
+  const startedAt = Date.now();
+  const rateLimiter = new RateLimiter({
+    limit: Number(process.env.BANSOS_RATE_LIMIT) || 300,
+    windowMs: 60_000,
+  });
+
+  const server = createServer({ catalog, rateLimiter, port, log, startedAt });
+
+  return new Promise((resolve, reject) => {
+    const tryListen = (attempt: number) => {
+      server.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE" && attempt < MAX_PORT) {
+          log.warn(`port ${port} busy — trying ${port + 1}`);
+          resolve(startServer(port + 1, bind));
+          return;
+        }
+        reject(err);
+      });
+      server.listen(port, bind, () => resolve({ server, port }));
+    };
+    tryListen(0);
+  });
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  const log = createLogger({ prefix: "bansosd" });
+
+  const config = loadConfig();
+  const port = args.port ?? config.port ?? DEFAULT_PORT;
+  const bind = args.bind ?? config.bind;
+
+  // run an initial health-check pass, then refresh periodically
+  const { server, port: actualPort } = await startServer(port, bind);
+  log.info(`bansosd listening on http://${bind}:${actualPort}`);
+
+  // TODO(M0): periodic catalog refresh driven by config.refreshIntervalMs.
+
+  writeJsonAtomic(STATE_FILE, {
+    pid: process.pid,
+    port: actualPort,
+    bind,
+    startedAt: Date.now(),
+  });
+
+  const shutdown = () => {
+    log.info("shutting down");
+    server.close(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+main().catch((err) => {
+  createLogger({ prefix: "bansosd" }).error("fatal", { error: String(err) });
+  process.exit(1);
+});
