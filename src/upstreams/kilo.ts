@@ -148,9 +148,34 @@ export const kiloUpstream: Upstream = {
   chatUrl: KILO_CHAT_URL,
 
   async fetchCatalog(): Promise<ModelDef[] | null> {
-    // TODO(M0): GET KILO_CATALOG_URL, keep `:free` / known ids, map to
-    // ModelDef[] using KILO_MODELS as the shape. return null on failure.
-    return null;
+    try {
+      const res = await fetch(KILO_CATALOG_URL);
+      if (!res.ok) return null;
+      const json = (await res.json()) as {
+        data?: Array<{ id: string; name?: string; context_length?: number }>;
+      };
+      const live = json.data ?? [];
+      const free = live.filter(
+        (m) => m.id.endsWith(":free") || KILO_MODELS.some((k) => k.id === m.id),
+      );
+      if (free.length === 0) return null;
+      return free.map((m) => {
+        const known = KILO_MODELS.find((k) => k.id === m.id);
+        if (known) return known;
+        return modelDef({
+          id: m.id,
+          name: m.name ?? m.id,
+          source: "kilo",
+          reasoning: false,
+          contextWindow: m.context_length ?? 200_000,
+          maxTokens: 10_000,
+          input: ["text"],
+          compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
+        });
+      });
+    } catch {
+      return null;
+    }
   },
 
   requestHeaders(): Record<string, string> {

@@ -61,6 +61,12 @@ function startServer(port: number, bind: string): Promise<{ server: http.Server;
 
   const server = createServer({ catalog, rateLimiter, port, log, startedAt });
 
+  // initial health-check pass, then refresh on the configured interval
+  void catalog.refresh();
+  if (config.refreshIntervalMs > 0) {
+    setInterval(() => void catalog.refresh(), config.refreshIntervalMs);
+  }
+
   return new Promise((resolve, reject) => {
     const tryListen = (attempt: number) => {
       server.once("error", (err: NodeJS.ErrnoException) => {
@@ -88,8 +94,6 @@ async function main(): Promise<void> {
   // run an initial health-check pass, then refresh periodically
   const { server, port: actualPort } = await startServer(port, bind);
   log.info(`bansosd listening on http://${bind}:${actualPort}`);
-
-  // TODO(M0): periodic catalog refresh driven by config.refreshIntervalMs.
 
   writeJsonAtomic(STATE_FILE, {
     pid: process.pid,

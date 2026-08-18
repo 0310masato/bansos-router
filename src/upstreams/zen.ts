@@ -92,8 +92,8 @@ export const zenUpstream: Upstream = {
   chatUrl: `${ZEN_BASE_URL}/chat/completions`,
 
   async fetchCatalog(): Promise<ModelDef[] | null> {
-    // TODO(M0): GET `${ZEN_BASE_URL}/models`, keep known free ids, map to
-    // ModelDef[] using ZEN_MODELS as the shape. return null on failure.
+    // zen's /models returns claude-* ids, not our free coding models;
+    // keep the seeded ZEN_MODELS instead of trusting that list
     return null;
   },
 

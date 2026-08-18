@@ -1,10 +1,10 @@
 import { modelDef, type ModelDef, type Upstream } from "./types";
 
-export const LLM7_BASE_URL = "https://llm7.io/api/v1";
+export const LLM7_BASE_URL = "https://api.llm7.io/v1";
 export const LLM7_ANONYMOUS_KEY = "unused";
-export const LLM7_ALIASES = ["default", "fast", "pro"] as const;
+// default/fast are free selectors; pro requires a paid subscription
+export const LLM7_ALIASES = ["default", "fast"] as const;
 
-// defaults used when the live catalog omits metadata
 const LLM7_DEFAULT_CONTEXT = 128_000;
 const LLM7_DEFAULT_MAX_TOKENS = 8_192;
 
@@ -15,9 +15,8 @@ export const llm7Upstream: Upstream = {
   chatUrl: `${LLM7_BASE_URL}/chat/completions`,
 
   async fetchCatalog(): Promise<ModelDef[] | null> {
-    // TODO(M0): GET `${LLM7_BASE_URL}/models`; snapshot the dynamic catalog
-    // with conservative defaults and tag `source: "llm7"`. always include the
-    // stable aliases (default/fast/pro). return null on failure.
+    // llm7 exposes no json models api (the /models page is html);
+    // keep the seeded aliases + dynamic snapshot instead
     return null;
   },
 

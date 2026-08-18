@@ -40,24 +40,32 @@ export class RuntimeCatalog {
   }
 
   // health-check: unreachable upstream keeps last-known models;
-  // a model missing from a reachable catalog is dropped
+  // a reachable upstream's live list replaces its seeded entries
   async refresh(): Promise<RefreshReport> {
     const report: RefreshReport = { checked: 0, alive: 0, dead: 0, degraded: [] };
 
     for (const upstream of this.upstreams) {
-      const catalog = await upstream.fetchCatalog();
-      if (catalog === null) {
+      const live = await upstream.fetchCatalog();
+      if (live === null) {
         report.degraded.push(upstream.id);
-        this.log.warn(`upstream ${upstream.id} unreachable — keeping last-known models`);
+        this.log.warn(`upstream ${upstream.id}: no live catalog — keeping last-known models`);
         continue;
       }
-      // TODO(M0): reconcile catalog against byId per upstream:
-      //   alive = present in live catalog; drop missing; keep existing metadata
-      report.checked += catalog.length;
+      const source: UpstreamSource =
+        upstream.kind === "local-openai" ? "local" : (upstream.id as UpstreamSource);
+      this.replaceBySource(source, live);
+      report.checked += live.length;
     }
 
     report.alive = this.byId.size;
     this.log.info(`catalog refresh: ${report.alive} model(s) alive`);
     return report;
+  }
+
+  private replaceBySource(source: UpstreamSource, models: ModelDef[]): void {
+    for (const [id, m] of this.byId) {
+      if (m.source === source) this.byId.delete(id);
+    }
+    for (const m of models) this.byId.set(m.id, m);
   }
 }

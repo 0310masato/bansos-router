@@ -51,9 +51,9 @@
 
 | Field | Value |
 |---|---|
-| Base URL | `https://llm7.io/api/v1` (OpenAI-compatible) |
+| Base URL | `https://api.llm7.io/v1` (OpenAI-compatible) |
 | Auth | **Anonymous** — send `api_key: "unused"`; optional free token from `dash.llm7.io` for higher limits |
-| Model source | `GET /v1/models` — **dynamic** (30+ models); stable aliases: `default`, `fast`, `pro` |
+| Model source | `GET /v1/models` — **dynamic** (30+ models); stable free selectors: `default`, `fast` (pro is paid-only) |
 | Rate limit | Shared anonymous tier (tight, unspecified); free token raises limits |
 | Quirk | Not affiliated with the upstream model providers; models can appear/disappear — dynamic catalog + health-check are mandatory |
 
@@ -122,7 +122,7 @@ v1 seed (20 pinned models, carried from pi-bansos, + LLM7 dynamic):
 `cohere/north-mini-code:free`, `poolside/laguna-xs-2.1:free`,
 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `openrouter/free`
 
-**LLM7 (dynamic):** stable aliases `default`, `fast`, `pro` + whatever
+**LLM7 (dynamic):** stable free selectors `default`, `fast` (pro is paid-only) + whatever
 `GET /v1/models` returns at health-check time.
 
 ## 4. Health checking
