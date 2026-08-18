@@ -228,6 +228,11 @@ async function handleAnthropic(
 
   const chatBody = parsed.value.chatBody as Record<string, unknown>;
   chatBody.model = model.id;
+  // defensive cap: pin max_tokens to the model's actual limit so a stale
+  // client value (or wrong metadata) never reaches the upstream
+  if (typeof chatBody.max_tokens === "number" && chatBody.max_tokens > model.maxTokens) {
+    chatBody.max_tokens = model.maxTokens;
+  }
   const headers = new Headers({
     "content-type": "application/json",
     ...upstream.requestHeaders(model),

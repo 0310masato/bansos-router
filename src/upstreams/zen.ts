@@ -19,7 +19,7 @@ export const ZEN_MODELS: ModelDef[] = [
     source: "zen",
     reasoning: true,
     contextWindow: 1_000_000,
-    maxTokens: 384_000,
+    maxTokens: 131_072,
     input: ["text"],
     compat: { supportsReasoningEffort: true, supportsDeveloperRole: false },
   }),
