@@ -149,10 +149,29 @@ async function handleChat(
       duplex: "half",
     });
 
+    // non-2xx: buffer and return safe JSON error
+    // (upstream may return HTML — Cloudflare/nginx error pages)
+    if (upstreamRes.status >= 400) {
+      const text = await upstreamRes.text();
+      try {
+        const json = JSON.parse(text);
+        sendJson(res, upstreamRes.status, json);
+      } catch {
+        sendJson(res, upstreamRes.status, {
+          error: {
+            message: text.slice(0, 256) || "upstream error",
+            type: "upstream_error",
+            status: upstreamRes.status,
+          },
+        });
+      }
+      return;
+    }
+
+    // 2xx: stream response as-is
     res.writeHead(upstreamRes.status, {
       "content-type": upstreamRes.headers.get("content-type") ?? "application/json",
     });
-
     if (upstreamRes.body) {
       Readable.fromWeb(
         upstreamRes.body as import("node:stream/web").ReadableStream,
