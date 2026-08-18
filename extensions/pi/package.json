@@ -1,0 +1,37 @@
+{
+  "name": "pi-bansos-router",
+  "version": "0.1.0",
+  "description": "pi extension for bansos-router — free keyless coding models via local daemon",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@earendil-works/pi-coding-agent --external:@earendil-works/pi-tui --external:@earendil-works/pi-ai",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "bansos-router",
+    "llm"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.1.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "file:/home/icqn/.bun/install/global/node_modules/@earendil-works/pi-coding-agent",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  }
+}
