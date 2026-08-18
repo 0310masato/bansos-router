@@ -22,7 +22,7 @@
     "dev": "tsx src/cli/index.ts",
     "dev:daemon": "tsx src/cli/index.ts daemon",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/stream.test.ts test/rate-limit.test.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "prepare": "npm run build"
   },
   "keywords": [

@@ -1,5 +1,27 @@
 import type { InternalTurn, ParseResult } from "./internal";
 
+// sanitize inbound messages based on model compatibility
+// (e.g. rewrite role "developer" to "system" when upstream does not support it)
+export function sanitizeChatBody(
+  body: Record<string, unknown>,
+  supportsDeveloperRole: boolean,
+): Record<string, unknown> {
+  if (supportsDeveloperRole || !Array.isArray(body.messages)) {
+    return body;
+  }
+
+  let modified = false;
+  const messages = body.messages.map((m) => {
+    if (m && typeof m === "object" && (m as Record<string, unknown>).role === "developer") {
+      modified = true;
+      return { ...m, role: "system" };
+    }
+    return m;
+  });
+
+  return modified ? { ...body, messages } : body;
+}
+
 // parse a /v1/chat/completions body into an InternalTurn.
 // validation + model extraction; the forwarder passes the raw body through
 export function parseChatTurn(body: unknown): ParseResult<InternalTurn> {

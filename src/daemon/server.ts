@@ -1,7 +1,7 @@
 import http from "node:http";
 import { Readable } from "node:stream";
 import type { Logger } from "../logger";
-import { parseChatTurn } from "../protocols/openai-chat";
+import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";
 import {
   parseAnthropicRequest,
   openAiCompletionToAnthropicMessage,
@@ -134,12 +134,18 @@ async function handleChat(
     stream: parsed.value.stream,
   });
 
+  const sanitizedBody = sanitizeChatBody(
+    body as Record<string, unknown>,
+    model.compat.supportsDeveloperRole,
+  );
+  const outboundBody = JSON.stringify(sanitizedBody);
+
   try {
     const relay = loadRelayState();
     const upstreamRes = await relayFetch(relay, upstream.chatUrl, {
       method: "POST",
       headers,
-      body: bodyText,
+      body: outboundBody,
       duplex: "half",
     });
 
