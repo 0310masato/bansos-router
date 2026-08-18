@@ -2,10 +2,7 @@ import fs from "node:fs";
 import { ADAPTERS } from "../adapters";
 import { loadConfig } from "../daemon/state";
 import { START_MARKER } from "../adapters/types";
-
-function expandHome(p: string): string {
-  return p.startsWith("~/") ? `${process.env.HOME ?? ""}/${p.slice(2)}` : p;
-}
+import { expandHome } from "./write";
 
 export async function runDoctor(_argv: string[]): Promise<number> {
   const config = loadConfig();
@@ -34,12 +31,31 @@ export async function runDoctor(_argv: string[]): Promise<number> {
       continue;
     }
     const content = fs.readFileSync(found, "utf8");
-    if (content.includes(START_MARKER)) {
+    const configured = adapter.undoKeys
+      ? hasKeys(content, adapter.undoKeys)
+      : content.includes(START_MARKER);
+    if (configured) {
       console.log(`✓ ${adapter.id.padEnd(12)} configured (${found})`);
     } else {
-      console.log(`· ${adapter.id.padEnd(12)} file exists but no bansos block (${found})`);
+      console.log(`· ${adapter.id.padEnd(12)} file exists but no bansos config (${found})`);
     }
   }
 
   return failures > 0 ? 1 : 0;
+}
+
+function hasKeys(content: string, keys: string[]): boolean {
+  try {
+    const obj = JSON.parse(content) as Record<string, unknown>;
+    const first = keys[0];
+    if (!first) return false;
+    let cur: unknown = obj;
+    for (const p of first.split(".")) {
+      cur = (cur as Record<string, unknown> | undefined)?.[p];
+      if (cur === undefined) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }

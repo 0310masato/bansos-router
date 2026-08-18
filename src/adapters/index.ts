@@ -1,11 +1,6 @@
 import type { HarnessAdapter, SetupContext, ConfigWrite } from "./types";
 import { START_MARKER, END_MARKER } from "./types";
 
-const jsonBlock = (): Pick<ConfigWrite, "mode" | "markers"> => ({
-  mode: "overwrite-block",
-  markers: [`/* ${START_MARKER} */`, `/* ${END_MARKER} */`],
-});
-
 const tomlBlock = (): Pick<ConfigWrite, "mode" | "markers"> => ({
   mode: "overwrite-block",
   markers: [`# ${START_MARKER}`, `# ${END_MARKER}`],
@@ -34,13 +29,21 @@ function claudeCodeAdapter(): HarnessAdapter {
         {
           path: "~/.claude/settings.json",
           content: `${JSON.stringify({ env }, null, 2)}\n`,
-          ...jsonBlock(),
+          mode: "merge",
         },
       ];
     },
     undo(): string[] {
       return ["~/.claude/settings.json"];
     },
+    // keys bansos adds to settings.json (--undo removes only these)
+    undoKeys: [
+      "env.ANTHROPIC_BASE_URL",
+      "env.ANTHROPIC_AUTH_TOKEN",
+      "env.ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      "env.ANTHROPIC_DEFAULT_SONNET_MODEL",
+      "env.ANTHROPIC_DEFAULT_OPUS_MODEL",
+    ],
   };
 }
 
@@ -90,13 +93,14 @@ function opencodeAdapter(): HarnessAdapter {
         {
           path: "~/.config/opencode/opencode.json",
           content: `${JSON.stringify({ provider }, null, 2)}\n`,
-          ...jsonBlock(),
+          mode: "merge",
         },
       ];
     },
     undo(): string[] {
       return ["~/.config/opencode/opencode.json"];
     },
+    undoKeys: ["provider.bansos"],
   };
 }
 
@@ -180,13 +184,15 @@ function gooseAdapter(): HarnessAdapter {
         {
           path: "~/.config/goose/custom_providers/bansos.json",
           content: `${JSON.stringify(provider, null, 2)}\n`,
-          ...jsonBlock(),
+          mode: "merge",
         },
       ];
     },
     undo(): string[] {
       return ["~/.config/goose/custom_providers/bansos.json"];
     },
+    // file is dedicated to bansos; undo removes it entirely
+    undoKeys: ["name", "engine", "display_name", "base_url", "models"],
   };
 }
 
@@ -211,13 +217,14 @@ function openclawAdapter(): HarnessAdapter {
         {
           path: "~/.openclaw/config.json",
           content: `${JSON.stringify(config, null, 2)}\n`,
-          ...jsonBlock(),
+          mode: "merge",
         },
       ];
     },
     undo(): string[] {
       return ["~/.openclaw/config.json"];
     },
+    undoKeys: ["models.providers.bansos"],
   };
 }
 

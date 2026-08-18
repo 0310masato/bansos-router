@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import http from "node:http";
-import { loadConfig, writeJsonAtomic, STATE_FILE } from "./state";
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { loadConfig, writeJsonAtomic, STATE_FILE, BANSOS_DIR } from "./state";
 import { createLogger } from "../logger";
 import { buildUpstreams } from "../upstreams";
 import { ZEN_MODELS } from "../upstreams/zen";
@@ -90,6 +93,25 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const port = args.port ?? config.port ?? DEFAULT_PORT;
   const bind = args.bind ?? config.bind;
+
+  if (args.bg) {
+    const logDir = path.join(BANSOS_DIR, "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, "bansosd.log");
+    const out = fs.openSync(logFile, "a");
+    const child = spawn(
+      process.execPath,
+      [...process.execArgv, process.argv[1]!, "--port", String(port), "--bind", bind],
+      {
+        stdio: ["ignore", out, out] as unknown as import("node:child_process").StdioOptions,
+        detached: true,
+      },
+    );
+    child.unref();
+    fs.closeSync(out);
+    log.info(`started in background (pid ${child.pid}), log: ${logFile}`);
+    return;
+  }
 
   // run an initial health-check pass, then refresh periodically
   const { server, port: actualPort } = await startServer(port, bind);

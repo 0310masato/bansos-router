@@ -63,25 +63,17 @@ type ConfigWrite = {
 };
 ```
 
-### 3.1 Block markers
+### 3.1 Write modes
 
-Every adapter that touches an existing file must wrap its contribution:
+`bansos setup <harness>` writes with `--undo` support in two modes:
 
-```jsonc
-// opencode.json — before
-{ "provider": {} }
-// after
-{ "provider": {
-  /* bansos-router:start */
-  "bansos": { "npm": "@opencode-ai/ai/providers/openai-compatible",
-              "options": { "baseURL": "http://127.0.0.1:17070/v1" },
-              "models": { "deepseek-v4-flash-free": {} } },
-  /* bansos-router:end */
-}}
-```
-
-`--undo` deletes between markers and re-serializes. Non-JSON formats (TOML,
-YAML, env) use comment markers (`# bansos-router:start` / `# …:end`).
+- **JSON targets** (Claude Code `settings.json`, OpenCode, Goose, OpenClaw):
+  the existing file is parsed, the bansos fragment is deep-merged, and the
+  file is re-serialized as valid JSON. `--undo` removes exactly the keys
+  bansos added (per-adapter `undoKeys`), never touching user keys.
+- **Non-JSON formats** (TOML, YAML, env — Aider, Codex, Hermes, Antigravity,
+  JCode): a marked block (`# bansos-router:start` / `# …:end`) is replaced or
+  appended; `--undo` deletes between the markers.
 
 ### 3.2 Env-based adapters (Aider, Claude Code)
 
@@ -89,8 +81,9 @@ Claude Code and Aider can take env vars. The adapter offers two modes:
 
 - **settings-file mode** (default): write into the harness's native config
   (`~/.claude/settings.json` `env` block / `aider.conf.yml`).
-- **shell-rc mode** (`--rc`): append `export` lines to `~/.bashrc`/`~/.zshrc`
-  inside markers. Preferred by users who want the change only in one shell.
+- **shell-rc mode** (`--rc`): *(planned)* append `export` lines to
+  `~/.bashrc`/`~/.zshrc` inside markers. Preferred by users who want the
+  change only in one shell.
 
 ### 3.3 Model pinning
 
@@ -238,6 +231,6 @@ For each configured harness, doctor:
 
 1. daemon running? (TCP connect to port)
 2. `/v1/models` reachable & non-empty?
-3. harness config file exists and contains bansos markers?
+3. harness config file exists and contains bansos markers (or merged keys)?
 4. for Codex: `wire_api = "responses"` present (not `chat`)?
 5. report per-harness ✅/⚠️/❌ with fix hints.

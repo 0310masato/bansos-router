@@ -8,7 +8,7 @@ function help(): void {
   console.log(`bansos — free, keyless coding models for every agent harness
 
 Usage:
-  bansos setup <harness...> [--model <id>] [--dry-run]   write harness config
+  bansos setup <harness...> [--model <id>] [--dry-run] [--undo]  write harness config
   bansos status                                          daemon status
   bansos models                                          list live catalog
   bansos refresh                                         re-run health checks
@@ -19,7 +19,7 @@ Usage:
 Harnesses: claude-code, aider, opencode, codex, hermes, goose,
            openclaw, antigravity, jcode   (pi via the separate extension)
 
-Run "bansosd" in another terminal to start the daemon (or: bansos doctor).
+Run "bansosd" to start the daemon ("bansosd --bg" for background, or: bansos doctor).
 `);
 }
 

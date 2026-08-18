@@ -24,6 +24,8 @@ export interface HarnessAdapter {
   // pure render; file writing happens in the cli (milestone M2)
   render(ctx: SetupContext): ConfigWrite[];
   undo(ctx: SetupContext): string[]; // paths that would be touched
+  // for merge-mode writes: dotted keys that --undo removes
+  undoKeys?: string[];
 }
 
 // standard marker pair used by every adapter
