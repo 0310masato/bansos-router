@@ -109,18 +109,19 @@ type ModelDef = {
 };
 ```
 
-v1 seed (20 pinned models, carried from pi-bansos, + LLM7 dynamic):
+v1 seed (pinned seeds + live refresh; liveness drops dead ids, live `:free`
+ids from the kilo API join at runtime):
 
-**OpenCode Zen (7):** `deepseek-v4-flash-free`, `mimo-v2.5-free`,
-`nemotron-3-ultra-free`, `north-mini-code-free`, `big-pickle`,
-`ling-3.0-flash-free`, `laguna-s-2.1-free`
+**OpenCode Zen (5):** `deepseek-v4-flash-free`, `mimo-v2.5-free`,
+`nemotron-3-ultra-free`, `big-pickle`, `laguna-s-2.1-free`
 
-**KiloCode gateway (13):** `kilo-auto/free`, `stepfun/step-3.7-flash:free`,
+**KiloCode gateway (13 seeded):** `kilo-auto/free`, `stepfun/step-3.7-flash:free`,
 `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-super-120b-a12b:free`,
 `nvidia/nemotron-3.5-lightning:free`, `nvidia/nemotron-3.5-content-safety:free`,
-`tencent/hy3:free`, `liquid/lfm-2.5-2.6b:free`, `poolside/laguna-s-2.1:free`,
-`cohere/north-mini-code:free`, `poolside/laguna-xs-2.1:free`,
-`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `openrouter/free`
+`tencent/hy3:free`, `liquid/lfm-2.5-2.6b:free` (seed; dead upstream, liveness-dropped),
+`poolside/laguna-s-2.1:free`, `cohere/north-mini-code:free`,
+`poolside/laguna-xs-2.1:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`,
+`openrouter/free`
 
 **LLM7 (dynamic):** stable free selectors `default`, `fast` (pro is paid-only) + whatever
 `GET /v1/models` returns at health-check time.

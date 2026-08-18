@@ -19,22 +19,22 @@
 
 ## 2. Matrix
 
-Legend: 🟢 config-only · 🟡 config + small adapter · 🔴 not supported (v1)
+Legend: 🟢 config-only · 🟢* config-only but needs M3 wire (not live yet) · 🟡 config + small adapter · 🔵 works manually, no `bansos setup` adapter yet · 🔴 not supported (v1)
 
 | Harness | Wire | Config location | Effort | Notes |
 |---|---|---|---|---|
-| **pi** | OpenAI Chat | extension (`registerProvider`) | 🟡 | Only code adapter: spawn daemon + register `bansos` provider + `/bansos` command (port of pi-bansos) |
+| **pi** | OpenAI Chat | extension (`registerProvider`) | 🟡 | Only code adapter: provider `bansosr` + `/bansosr` command, spawns daemon on demand, stops it again on exit if it spawned it |
 | **Claude Code** | Anthropic Messages | `~/.claude/settings.json` (`env`) | 🟢 | `ANTHROPIC_BASE_URL=http://127.0.0.1:17070` + `ANTHROPIC_AUTH_TOKEN=bansos` + model mappings |
 | **Aider** | OpenAI Chat | env / `aider.conf.yml` | 🟢 | `OPENAI_API_BASE=http://127.0.0.1:17070/v1`, `OPENAI_API_KEY=bansos`, `AIDER_MODEL=<id>` |
 | **OpenCode** | OpenAI Chat | `~/.config/opencode/opencode.json` | 🟢 | Custom provider with `@ai-sdk/openai-compatible`, `baseURL` |
-| **Codex CLI** | OpenAI Responses | `~/.codex/config.toml` | 🟢 | `[model_providers.bansos] base_url`, `wire_api = "responses"` (⚠️ chat unsupported ≥0.122) |
+| **Codex CLI** | OpenAI Responses | `~/.codex/config.toml` | 🟢* | `[model_providers.bansos] base_url`, `wire_api = "responses"` — requires M3 (daemon returns 501 today) |
 | **Hermes (Nous)** | OpenAI Chat | `~/.hermes/config.yaml` | 🟢 | `model.provider: custom` + `model.base_url` |
 | **OpenClaw** | OpenAI Chat or Anthropic | `~/.openclaw/config.json` / agent `models.json` | 🟢 | `models.providers.<id>.baseUrl`; can pick either wire |
 | **Goose** | OpenAI Chat | `~/.config/goose/custom_providers/*.json` | 🟢 | `engine: "openai"`, `base_url`, model list |
 | **Antigravity CLI** | OpenAI Chat | `~/.config/antigravity/config.toml` | 🟢 | `base_url`, `model`, `api_key_env` (or inline) |
 | **JCode** | OpenAI Chat | `~/.jcode/config.toml` | 🟢 | `[providers.bansos] type="openai-compatible"`, `base_url` |
-| **Cline** | OpenAI Chat | `cline_mcp_settings` / settings UI | 🟢 | OpenAI-compatible base URL; config writer optional |
-| **Continue** | OpenAI Chat | `~/.continue/config.json` | 🟢 | OpenAI-compatible provider |
+| **Cline** | OpenAI Chat | `cline_mcp_settings` / settings UI | 🔵 | OpenAI-compatible base URL; works manually, no `bansos setup` adapter yet |
+| **Continue** | OpenAI Chat | `~/.continue/config.json` | 🔵 | OpenAI-compatible provider; works manually, no `bansos setup` adapter yet |
 | **Claude Desktop** | Anthropic Messages | — | 🔴 | No supported custom base URL; out of scope (hacky MITM only) |
 | **Copilot CLI** | — | — | 🔴 | OAuth-only, no custom endpoint |
 | **Gemini CLI** | — | — | 🔴 | Retired (June 2026) → Antigravity CLI |
@@ -186,17 +186,25 @@ base_url = "http://127.0.0.1:17070/v1"
 
 ### pi — extension (the only code adapter)
 
-Mirrors `pi-bansos`: start daemon (if not running), health-check, then
+Package `pi-bansos-router` (`pi install npm:pi-bansos-router`). Registers the
+`bansosr` provider (base URL `http://127.0.0.1:17070/v1`, `api:
+"openai-completions"`), fetches the live model list from `/v1/models`, and
+registers a `/bansosr` status command:
 
 ```ts
-pi.registerProvider("bansos", {
+pi.registerProvider("bansosr", {
   baseUrl: "http://127.0.0.1:17070/v1",
-  apiKey: "placeholder",
+  apiKey: "bansos",
   api: "openai-completions",
   models: aliveModels.map(toPiModel),
 });
-pi.registerCommand("bansos", { /* status / relay toggles */ });
+pi.registerCommand("bansosr", { /* status */ });
 ```
+
+Daemon lifecycle: if the daemon is not running when pi starts, the extension
+spawns it (`bansos start --bg`); if the extension spawned it, it stops it
+again on `session_shutdown`. A daemon started manually by the user is left
+running.
 
 ## 5. Setup flows
 
@@ -221,9 +229,10 @@ claude
 
 ### Multi-harness
 
-`bansos setup pi claude-code aider codex` — all configs written, all pointing
-at the same daemon. Rate limits are shared across harnesses (see
-`docs/upstreams.md` §7) — relay becomes the escape hatch.
+`bansos setup claude-code aider opencode codex` — all configs written, all
+pointing at the same daemon. Rate limits are shared across harnesses (see
+`docs/upstreams.md` §7) — relay becomes the escape hatch. (pi is not a
+`bansos setup` harness; install the `pi-bansos-router` extension instead.)
 
 ## 6. Verification (`bansos doctor`)
 

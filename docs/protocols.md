@@ -10,10 +10,11 @@
 |---|---|---|
 | `POST /v1/chat/completions` | OpenAI Chat Completions | pi, Aider, OpenCode, Hermes, Goose, OpenClaw, Antigravity, JCode, Cline, Continue |
 | `POST /v1/messages` | Anthropic Messages | Claude Code, OpenClaw (anthropic mode) |
-| `POST /v1/responses` | OpenAI Responses | Codex CLI (≥0.122, `wire_api = "responses"`) |
+| `POST /v1/responses` | OpenAI Responses | Codex CLI (≥0.122, `wire_api = "responses"`) — **not live yet, lands in M3** |
 | `GET /v1/models` | OpenAI (list) | model pickers; returns **only alive curated models** |
 | `GET /healthz` | — | daemon health |
 | `GET /bansos/status` | — | CLI status payload (JSON) |
+| `POST /bansos/refresh` | — | CLI refresh: re-run upstream health checks now |
 
 ## 2. Internal normalized model
 

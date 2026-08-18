@@ -94,8 +94,8 @@ The core server, run via `bansos start` (foreground or `--bg`) or the
 
 | Concern | Design |
 |---|---|
-| HTTP server | Node `http`/Bun native server, bound to `127.0.0.1`, port `17070` (env `BANSOS_PORT`), auto-bump to next free port up to `17090` (proven pattern from pi-bansos) |
-| Inbound routes | `POST /v1/chat/completions`, `POST /v1/messages`, `POST /v1/responses`, `GET /v1/models`, `GET /healthz`, `GET /bansos/status` |
+| HTTP server | Node `http`/Bun native server, bound to `127.0.0.1`, port `17070`, auto-bump to next free port up to `17090` (proven pattern from pi-bansos); port/bind configurable via `~/.bansos/config.json` |
+| Inbound routes | `POST /v1/chat/completions`, `POST /v1/messages`, `GET /v1/models`, `GET /healthz`, `GET /bansos/status`, `POST /bansos/refresh` — all live; `POST /v1/responses` returns 501 until M3 |
 | Catalog | Runtime catalog = static registry ∪ dynamic snapshots (LLM7 today; local gateways join in M5), filtered by liveness; served by `/v1/models`; **never forwarded upstream** (prevents paid-model leakage, see §6) |
 | Health checker | At startup: fetch each upstream catalog, mark models alive/dead. Periodic refresh (configurable, e.g. every 30 min) + manual refresh via CLI |
 | Protocol translation | Inbound wire → internal normalized turn → upstream Chat Completions. See `docs/protocols.md` |
@@ -127,8 +127,9 @@ operations — it writes configs that point at `http://127.0.0.1:17070/v1`.
 Not code — **declarative config templates + a writer per harness**. Each
 adapter knows: which wire protocol to use, where the config file lives, and
 how to render it. A harness needs no plugin to work with bansos-router; the
-only code adapter is the optional **pi extension** (reuses pi-bansos's
-`registerProvider` + `/bansos` command pattern).
+only code adapter is the optional **pi extension** (package `pi-bansos-router`;
+registers provider `bansosr` + `/bansosr` command, spawns the daemon on
+demand, stops it again when pi exits if the extension spawned it).
 
 ## 4. Runtime topology
 
@@ -137,15 +138,16 @@ only code adapter is the optional **pi extension** (reuses pi-bansos's
         │                        │
         │                        └─► relay (optional) ──► upstreams
         │
-        ├── pi (extension registers provider)
+        ├── pi (extension registers provider `bansosr`)
         ├── Claude Code  (ANTHROPIC_BASE_URL → /v1/messages)
         ├── Aider        (OPENAI_API_BASE → /v1/chat/completions)
-        ├── Codex        (config.toml → /v1/responses)
+        ├── Codex        (config.toml → /v1/responses, M3)
         └── …            (per-harness config)
 ```
 
 - **Default bind is loopback only.** Listening on `0.0.0.0` is possible but
-  explicitly discouraged and requires `BANSOS_BIND=0.0.0.0` opt-in.
+  explicitly discouraged; set it via `~/.bansos/config.json` (`"bind"`) with
+  awareness of the risks.
 - Daemon lifecycle: started manually (`bansos start`, or `bansosd`) or spawned
   on demand by the pi extension. A `bansos doctor` subcommand detects "daemon
   not running" and offers to start it. `bansos stop` kills every daemon
