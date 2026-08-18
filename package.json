@@ -1,0 +1,56 @@
+{
+  "name": "bansos-router",
+  "version": "0.1.0",
+  "description": "Bansos for your AI agents — free, keyless coding models routed to every coding harness through one local endpoint. No accounts, no keys, no cost.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "bansos": "dist/cli/index.js",
+    "bansosd": "dist/daemon/index.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:cli && npm run build:daemon",
+    "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=esm --outfile=dist/cli/index.js",
+    "build:daemon": "esbuild src/daemon/index.ts --bundle --platform=node --format=esm --outfile=dist/daemon/index.js",
+    "dev": "tsx src/cli/index.ts",
+    "dev:daemon": "tsx src/daemon/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/stream.test.ts test/rate-limit.test.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "llm",
+    "proxy",
+    "router",
+    "free-models",
+    "coding-agent",
+    "openai-compatible",
+    "claude-code",
+    "opencode",
+    "pi",
+    "codex"
+  ],
+  "dependencies": {
+    "smol-toml": "^1.8.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,225 @@
+# bansos-router — Upstreams, Catalog & Relay
+
+> Companion to `architecture.md`. Details the keyless free upstreams, the
+> curated model catalog, health checking, rate-limit handling, and the relay
+> egress design (patterns carried over from `pi-bansos`; local-gateway
+> chaining and ban-risk hygiene informed by `freebuff-proxy`).
+
+## 1. Design goals for the upstream layer
+
+- **Keyless first** — flagship upstreams need zero credentials.
+- **Curated catalog** — we advertise only models we registered and verified;
+  never pass through an upstream's full model list (avoids leaking paid
+  models into `/v1/models`).
+- **Liveness-gated** — free promos expire; dead models are skipped silently.
+- **Relay escape hatch** — per-IP rate limits are dodged by routing egress
+  through a user-owned relay, toggled live, no daemon restart.
+- **Upstream taxonomy** — two kinds:
+  - *remote keyless* (Zen, Kilo, LLM7): zero credentials; spoofed headers
+    where needed; relay egress allowed.
+  - *local token gateways* (freebuff-proxy, LiteLLM, 9router, ollama):
+    **roadmap (M5)** — opt-in, chained at `127.0.0.1:<port>`; may carry a
+    token; relay egress **off**.
+
+## 2. Upstreams (v1)
+
+### 2.1 OpenCode Zen
+
+| Field | Value |
+|---|---|
+| Base URL | `https://opencode.ai/zen/v1` (OpenAI-compatible) |
+| Auth | Keyless passthrough (no login) |
+| Spoofed headers | `User-Agent: opencode/latest/1.14.50/cli`, `x-opencode-client: cli`, `x-opencode-project: default`, `x-opencode-session: <uuid>`, `x-opencode-request: <uuid>` |
+| Model source | `GET /v1/models` (filter `id` ends with `-free` / known free ids) |
+| Rate limit | Unpublished; treated as best-effort |
+
+> ⚠️ ToS note: OpenCode Zen's free tier is intended for OpenCode users. The
+> passthrough pattern (already used by pi-bansos, 9router, zen-proxy) is
+> tolerated today but can change. Health-check + relay keep the router
+> resilient if a model or the whole endpoint disappears.
+
+### 2.2 KiloCode gateway
+
+| Field | Value |
+|---|---|
+| Base URL | `https://api.kilo.ai/api/gateway/chat/completions` |
+| Auth | Keyless — 200 requests/hour per IP |
+| Model source | `GET https://api.kilo.ai/api/gateway/models` (filter `:free` suffix / known ids) |
+| Quirk | Free models reject `reasoning_effort`; some emit output in `reasoning` field |
+
+### 2.3 LLM7
+
+| Field | Value |
+|---|---|
+| Base URL | `https://llm7.io/api/v1` (OpenAI-compatible) |
+| Auth | **Anonymous** — send `api_key: "unused"`; optional free token from `dash.llm7.io` for higher limits |
+| Model source | `GET /v1/models` — **dynamic** (30+ models); stable aliases: `default`, `fast`, `pro` |
+| Rate limit | Shared anonymous tier (tight, unspecified); free token raises limits |
+| Quirk | Not affiliated with the upstream model providers; models can appear/disappear — dynamic catalog + health-check are mandatory |
+
+> LLM7 is the third fully keyless upstream. Unlike Zen/Kilo, its catalog is
+> **not pinned in code**: the runtime catalog snapshots whatever `/v1/models`
+> returns at health-check time (§4), with conservative defaults
+> (`reasoning: false`, `contextWindow: 128_000`, `maxTokens: 8_192`) unless
+> the live catalog says otherwise.
+
+### 2.4 Future (roadmap — out of v1 scope)
+
+v1 ships **keyless upstreams only**. These land later:
+
+- **FreeBuff — via `freebuff-proxy` (token-based local gateway)**. `freebuff-proxy`
+  (Go, MIT) exposes FreeBuff/Codebuff CLI models through OpenAI, Anthropic, and
+  Responses wires at `http://127.0.0.1:3457/v1`. Chaining it as a *local
+  upstream* is designed but deferred: it needs a `cb_...` token, has **high
+  ban risk** (ToS conflict), and requires relay egress **off** (its own docs
+  warn against VPN/hosting egress). Design rules are captured in
+  `docs/architecture.md` §7.7 + this section's history; implementation lands
+  with `{ type: "local-openai", baseUrl, apiKey? }` in `~/.bansos/config.json`.
+- **OpenRouter `:free`** models (20 req/min, 200 req/day per model — needs no
+  key for some models, else optional key)
+- **Routeway `:free`**, **OVHcloud AI Endpoints anonymous tier** (2 req/min/IP,
+  no signup), DashScope free tokens
+- Each new upstream must declare: base URL, auth mode, catalog source, rate
+  limits, and `compat` flags (see `docs/protocols.md` §5).
+
+## 3. Catalog format
+
+Static registry shipped in code (`src/upstreams/catalog.ts`), one entry per
+known free model. Exception: sources with **dynamic catalogs** (LLM7) are
+snapshotted into the runtime catalog at health-check time instead of being
+pinned statically. The **runtime catalog** is the union of the static
+registry and dynamic snapshots, filtered by liveness; only the runtime
+catalog is served.
+
+```ts
+type ModelDef = {
+  id: string;            // exact upstream model id (never an alias)
+  name: string;
+  source: "zen" | "kilo" | "llm7" | "local";
+  reasoning: boolean;
+  contextWindow: number;
+  maxTokens: number;
+  input: ("text" | "image")[];
+  compat: {
+    supportsReasoningEffort: boolean;
+    supportsDeveloperRole: boolean;
+    thinkingFormat?: "content" | "reasoning-field";
+  };
+  cost: { input: 0; output: 0; cacheRead: 0; cacheWrite: 0 };
+};
+```
+
+v1 seed (20 pinned models, carried from pi-bansos, + LLM7 dynamic):
+
+**OpenCode Zen (7):** `deepseek-v4-flash-free`, `mimo-v2.5-free`,
+`nemotron-3-ultra-free`, `north-mini-code-free`, `big-pickle`,
+`ling-3.0-flash-free`, `laguna-s-2.1-free`
+
+**KiloCode gateway (13):** `kilo-auto/free`, `stepfun/step-3.7-flash:free`,
+`nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3-super-120b-a12b:free`,
+`nvidia/nemotron-3.5-lightning:free`, `nvidia/nemotron-3.5-content-safety:free`,
+`tencent/hy3:free`, `liquid/lfm-2.5-2.6b:free`, `poolside/laguna-s-2.1:free`,
+`cohere/north-mini-code:free`, `poolside/laguna-xs-2.1:free`,
+`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`, `openrouter/free`
+
+**LLM7 (dynamic):** stable aliases `default`, `fast`, `pro` + whatever
+`GET /v1/models` returns at health-check time.
+
+## 4. Health checking
+
+| Phase | When | What |
+|---|---|---|
+| Startup | daemon boot | fetch each upstream catalog; mark alive/dead; log `✓/✗` per model |
+| Periodic | every `refreshInterval` (default 30 min, configurable) | re-fetch; update runtime catalog in place; keep serving during the check |
+| Manual | `bansos refresh` | force a check now |
+| Failure policy | upstream unreachable | keep last-known-good catalog; mark source `degraded`; do not wipe models (a blip ≠ death) |
+
+Catalog fetches are cheap (`GET /v1/models`-style); liveness of **individual**
+models is derived from the upstream catalog containing that id — we do not
+fire one request per model (pi-bansos's approach).
+
+## 5. Rate limiting (daemon-local)
+
+- Per-IP sliding window on inbound requests (default: generous, e.g. 300/min)
+  — protects the loopback socket if the user binds LAN, not a real abuse
+  defense for public exposure (which we don't support).
+- Configurable via `~/.bansos/config.json`; disabled entirely with
+  `BANSOS_RATE_LIMIT=0`.
+
+## 6. Upstream rate-limit reality
+
+| Upstream | Limit | Shared across harnesses? |
+|---|---|---|
+| KiloCode | 200 req/hr/IP | ✅ yes — all harnesses share your IP |
+| OpenCode Zen | unpublished | ✅ likely |
+| OpenRouter free | 20 req/min, 200 req/day/model | ✅ yes |
+
+**Consequence:** running 5 harnesses through one daemon shares one budget.
+This is the core argument for the relay feature (§8).
+
+## 7. Relay egress
+
+### 7.1 Pattern (proven in pi-bansos / 9router)
+
+When enabled, upstream requests are sent **to the relay URL** with two
+headers; the relay forwards to the real upstream and streams the body back
+unchanged (SSE passes through untouched):
+
+```
+POST https://<relay>/            ← relay URL
+x-relay-target: https://api.kilo.ai   ← upstream origin (allowlisted)
+x-relay-path:   /api/gateway/chat/completions
+```
+
+- Relay is a trivial server: read `x-relay-target` + `x-relay-path`, validate
+  against an allowlist, forward method/headers/body, stream back.
+- **Allowlist:** `ALLOWED_TARGETS` = known upstream origins only
+  (`opencode.ai`, `api.kilo.ai`, `llm7.io`, …). Relay cannot be abused as an
+  open proxy to arbitrary hosts.
+- **Local gateways bypass the relay (M5)** — chained local upstreams
+  (freebuff-proxy at `127.0.0.1:3457`, LiteLLM, 9router, ollama) will always
+  be reached directly. For FreeBuff this is mandatory: relaying would route
+  through a hosting egress IP and trigger upstream abuse scoring.
+- Fallback: if relay errors, optionally fall back to direct (config flag,
+  default off to avoid surprising direct traffic).
+
+### 7.2 Relay types
+
+| Type | Deploy | Lifetime |
+|---|---|---|
+| Vercel worker | `bansos relay deploy` (one-shot, token in-memory only) | free tier: 100 GB / 500k invocations/mo |
+| Cloudflare worker | manual URL via `bansos relay url <URL>` | free tier generous |
+| Deno / user-owned | manual URL | any |
+
+### 7.3 State & UX
+
+- Saved relays list + active relay + enabled flag persist in
+  `~/.bansos/relay-state.json` (outside package dir, survives npm updates).
+- Live toggling: `bansos relay on|off|use <URL>|list|remove <URL>|deploy`.
+- **No built-in default relay** — a public package must never bake in one
+  user's personal relay URL.
+- A relay is a single fixed exit IP (no rotation) — multiple relays can be
+  saved and switched; auto-rotation across saved relays is a v1.1 candidate.
+
+## 8. Failure taxonomy & handling
+
+| Condition | Symptom | Handling |
+|---|---|---|
+| Model removed upstream | missing from catalog fetch | dropped at next health pass |
+| Model promo expired (id 404s) | upstream 404/400 on request | returned as error; dropped on next refresh |
+| Per-IP rate limit hit | upstream 429/402 | error surfaced (mapped per protocol); `bansos relay on` is the fix |
+| Whole upstream down | connect timeout | mark source degraded, keep last-known catalog, log |
+| Relay down | relay 5xx/timeout | fallback per config; `bansos relay off` |
+
+## 9. ToS & ethical guardrails (ship in README)
+
+- Free tiers are **best-effort**: promos expire, IDs change, limits move.
+- Don't hammer upstreams — the health check is the only automated traffic
+  beyond actual usage.
+- Relay usage must respect the upstream's ToS; the tool is for personal
+  development use.
+- **FreeBuff (M5) is opt-in with real ban risk** — requires a FreeBuff/Codebuff
+  account token; using it conflicts with FreeBuff ToS and upstream detection
+  can suspend accounts. Default off, residential IP only, modest usage, and
+  never routed through the relay.
+- bansos-router does not resell, pool, or proxy access for third parties.
