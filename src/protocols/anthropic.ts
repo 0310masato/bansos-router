@@ -56,9 +56,17 @@ export function parseAnthropicRequest(body: unknown): ParseResult<AnthropicParse
 
 function normalizeText(x: unknown): string | null {
   if (x === undefined || x === null) return null;
-  if (typeof x === "string") return x;
+  if (typeof x === "string") return x.trim() || null;
   if (Array.isArray(x)) {
-    return x.map((b) => (b && b.type === "text" ? b.text ?? "" : "")).join("");
+    const text = x
+      .map((b) => {
+        if (!b || typeof b !== "object") return "";
+        if (b.type === "text" && typeof b.text === "string") return b.text;
+        if (typeof b.text === "string") return b.text;
+        return "";
+      })
+      .join("");
+    return text.trim() || null;
   }
   return null;
 }
@@ -66,7 +74,9 @@ function normalizeText(x: unknown): string | null {
 function blocksToText(blocks: any[]): string {
   let t = "";
   for (const b of blocks) {
-    if (b && b.type === "text" && typeof b.text === "string") t += b.text;
+    if (!b || typeof b !== "object") continue;
+    if (b.type === "text" && typeof b.text === "string") t += b.text;
+    else if (typeof b.text === "string") t += b.text;
   }
   return t;
 }
@@ -84,8 +94,19 @@ function imageToOpenAi(source: any): any | null {
 
 // returns one or more openai messages (tool_result splits into tool-role msgs)
 function convertMessage(m: any): any[] | null {
-  const role = m?.role;
-  const content = m?.content;
+  if (!m || typeof m !== "object") return null;
+  const role = m.role;
+  const content = m.content;
+
+  if (role === "system" || role === "developer") {
+    const text = typeof content === "string" ? content : (Array.isArray(content) ? blocksToText(content) : "");
+    return [{ role: "system", content: text }];
+  }
+
+  if (role === "tool") {
+    const text = typeof content === "string" ? content : (Array.isArray(content) ? blocksToText(content) : "");
+    return [{ role: "tool", tool_call_id: m.tool_call_id ?? m.tool_use_id ?? "unknown", content: text }];
+  }
 
   if (role === "assistant") {
     if (typeof content === "string") return [{ role: "assistant", content }];
@@ -129,11 +150,15 @@ function convertMessage(m: any): any[] | null {
       for (const img of images) c.push(img);
       result.push({ role: "user", content: c.length === 1 && c[0].type === "text" ? text : c });
     }
-    if (result.length === 0) result.push({ role: "user", content: "" });
+    if (result.length === 0 && toolResults.length === 0) {
+      result.push({ role: "user", content: "" });
+    }
     return result;
   }
 
-  return null;
+  // Fallback for any other message structure
+  const fallbackText = typeof content === "string" ? content : (Array.isArray(content) ? blocksToText(content) : "");
+  return [{ role: "user", content: fallbackText }];
 }
 
 function toolResultContent(content: unknown): string {

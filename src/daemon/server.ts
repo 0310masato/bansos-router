@@ -1,4 +1,5 @@
 import http from "node:http";
+import fs from "node:fs";
 import { Readable, Transform } from "node:stream";
 import type { Logger } from "../logger";
 import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";

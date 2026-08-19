@@ -36,7 +36,13 @@ export class RuntimeCatalog {
   }
 
   resolve(id: string): ModelDef | undefined {
-    return this.byId.get(id);
+    const direct = this.byId.get(id);
+    if (direct) return direct;
+    // tolerant fallback: e.g. "hy3:free" matches "tencent/hy3:free"
+    for (const [k, m] of this.byId) {
+      if (k.endsWith(`/${id}`)) return m;
+    }
+    return undefined;
   }
 
   // health-check: unreachable upstream keeps last-known models;

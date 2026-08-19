@@ -25,6 +25,7 @@ function claudeCodeAdapter(): HarnessAdapter {
         ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel,
         ANTHROPIC_DEFAULT_SONNET_MODEL: ctx.defaultModel,
         ANTHROPIC_DEFAULT_OPUS_MODEL: ctx.defaultModel,
+        CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
       };
       return [
         {
@@ -44,6 +45,7 @@ function claudeCodeAdapter(): HarnessAdapter {
       "env.ANTHROPIC_DEFAULT_HAIKU_MODEL",
       "env.ANTHROPIC_DEFAULT_SONNET_MODEL",
       "env.ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
     ],
   };
 }
