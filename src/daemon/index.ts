@@ -5,10 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { loadConfig, writeJsonAtomic, STATE_FILE, BANSOS_DIR } from "./state";
 import { createLogger } from "../logger";
-import { buildUpstreams } from "../upstreams";
-import { ZEN_MODELS } from "../upstreams/zen";
-import { KILO_MODELS } from "../upstreams/kilo";
-import { llm7AliasModels } from "../upstreams/llm7";
+import { buildUpstreams, SEEDED_MODELS } from "../upstreams";
 import { RuntimeCatalog } from "./catalog";
 import { RateLimiter } from "./rate-limit";
 import { createServer } from "./server";
@@ -58,7 +55,7 @@ function startServer(port: number, bind: string): Promise<{ server: http.Server;
   const catalog = new RuntimeCatalog(upstreams, log);
 
   // seed the pinned registry: usable offline, refined by health checks
-  catalog.seed([...ZEN_MODELS, ...KILO_MODELS, ...llm7AliasModels()]);
+  catalog.seed(SEEDED_MODELS);
 
   const startedAt = Date.now();
   const rateLimiter = new RateLimiter({

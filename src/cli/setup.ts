@@ -2,6 +2,8 @@ import fs from "node:fs";
 import { ADAPTERS, findAdapter } from "../adapters";
 import type { HarnessAdapter, SetupContext } from "../adapters/types";
 import { loadConfig } from "../daemon/state";
+import { SEEDED_MODELS } from "../upstreams";
+import { modelDef, type ModelDef } from "../upstreams/types";
 import {
   applyBlockWrite,
   applyMergeWrite,
@@ -49,6 +51,36 @@ function resolveTargetFile(adapter: HarnessAdapter, defaultPath: string): string
     if (matched) return matched;
   }
   return defaultPath;
+}
+
+async function getSetupModels(baseUrl: string): Promise<ModelDef[]> {
+  try {
+    const res = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(800) });
+    if (res.ok) {
+      const json = (await res.json()) as {
+        data?: Array<{ id: string; context_window?: number; max_tokens?: number; reasoning?: boolean; name?: string }>;
+      };
+      if (Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map((m) => {
+          const known = SEEDED_MODELS.find((s) => s.id === m.id);
+          if (known) return known;
+          return modelDef({
+            id: m.id,
+            name: m.name ?? m.id,
+            source: "zen",
+            reasoning: m.reasoning ?? false,
+            contextWindow: m.context_window ?? 256_000,
+            maxTokens: m.max_tokens ?? 32_000,
+            input: ["text"],
+            compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
+          });
+        });
+      }
+    }
+  } catch {
+    // daemon offline or unreachable, fall back to seeded offline list
+  }
+  return SEEDED_MODELS;
 }
 
 function applyAdapter(adapter: HarnessAdapter, ctx: SetupContext): number {
@@ -125,10 +157,13 @@ export async function runSetup(argv: string[]): Promise<number> {
   }
 
   const config = loadConfig();
+  const baseUrl = `http://${config.bind}:${config.port}/v1`;
+  const models = await getSetupModels(baseUrl);
   const ctx: SetupContext = {
-    baseUrl: `http://${config.bind}:${config.port}/v1`,
+    baseUrl,
     defaultModel: args.model ?? DEFAULT_MODEL,
-    models: [],
+    models,
+    specificModel: Boolean(args.model),
   };
 
   let failed = 0;

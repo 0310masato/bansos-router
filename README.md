@@ -66,8 +66,11 @@ separate extension. `codex` writes its config too, but its `wire_api =
 
 ## Available models
 
-All upstreams are text-only and keyless. `deepseek-v4-flash-free` is the
-default `bansos setup` uses. Context and max output are token counts.
+All upstreams are text-only and keyless. By default, `bansos setup` automatically
+registers all available free models into harnesses with explicit model lists (like
+OpenCode, Goose, and OpenClaw), using `deepseek-v4-flash-free` as the primary default.
+Pass `--model <id>` if you wish to pin a specific single model. Context and max output
+are token counts.
 
 ### OpenCode Zen
 

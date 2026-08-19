@@ -18,10 +18,11 @@ function claudeCodeAdapter(): HarnessAdapter {
     wire: "anthropic",
     configPaths: ["~/.claude/settings.json"],
     render(ctx: SetupContext): ConfigWrite[] {
+      const haikuModel = ctx.specificModel ? ctx.defaultModel : (ctx.models.find((m) => !m.reasoning)?.id ?? "mimo-v2.5-free");
       const env = {
         ANTHROPIC_BASE_URL: ctx.baseUrl.replace(/\/v1$/, ""),
         ANTHROPIC_AUTH_TOKEN: "bansos",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: ctx.defaultModel,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: haikuModel,
         ANTHROPIC_DEFAULT_SONNET_MODEL: ctx.defaultModel,
         ANTHROPIC_DEFAULT_OPUS_MODEL: ctx.defaultModel,
       };
@@ -87,11 +88,21 @@ function opencodeAdapter(): HarnessAdapter {
       "opencode.jsonc",
     ],
     render(ctx: SetupContext): ConfigWrite[] {
+      const modelEntries: Record<string, Record<string, unknown>> = {};
+      if (ctx.specificModel) {
+        modelEntries[ctx.defaultModel] = {};
+      } else {
+        const list = ctx.models.length > 0 ? ctx.models : [{ id: ctx.defaultModel }];
+        for (const m of list) {
+          modelEntries[m.id] = {};
+        }
+      }
+
       const provider = {
         bansos: {
           npm: "@ai-sdk/openai-compatible",
           options: { baseURL: ctx.baseUrl },
-          models: { [ctx.defaultModel]: {} },
+          models: modelEntries,
         },
       };
       return [
@@ -183,12 +194,19 @@ function gooseAdapter(): HarnessAdapter {
     wire: "chat",
     configPaths: ["~/.config/goose/custom_providers/bansos.json"],
     render(ctx: SetupContext): ConfigWrite[] {
+      const models = ctx.specificModel
+        ? [{ name: ctx.defaultModel, context_limit: 256000 }]
+        : (ctx.models.length > 0 ? ctx.models : [{ id: ctx.defaultModel, contextWindow: 256000 }]).map((m) => ({
+            name: m.id,
+            context_limit: m.contextWindow || 256000,
+          }));
+
       const provider = {
         name: "bansos",
         engine: "openai",
         display_name: "Bansos Router",
         base_url: ctx.baseUrl,
-        models: [{ name: ctx.defaultModel, context_limit: 256000 }],
+        models,
       };
       return [
         {
@@ -217,12 +235,18 @@ function openclawAdapter(): HarnessAdapter {
       "openclaw.json",
     ],
     render(ctx: SetupContext): ConfigWrite[] {
+      const models = ctx.specificModel
+        ? [{ id: ctx.defaultModel }]
+        : (ctx.models.length > 0 ? ctx.models : [{ id: ctx.defaultModel }]).map((m) => ({
+            id: m.id,
+          }));
+
       const config = {
         models: {
           providers: {
             bansos: {
               baseUrl: ctx.baseUrl,
-              models: [{ id: ctx.defaultModel }],
+              models,
             },
           },
         },

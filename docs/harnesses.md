@@ -88,11 +88,13 @@ Claude Code and Aider can take env vars. The adapter offers two modes:
 
 ### 3.3 Model pinning
 
-`bansos setup <harness> --model <id>` pins one model. Without it, the adapter
-writes a small default set (cheapest alive reasoning + non-reasoning model)
-and the harness's own model picker (e.g. pi `/model`, Claude Code
-`/model`) can switch at runtime because `/v1/models` advertises everything
-alive.
+`bansos setup <harness> --model <id>` pins one specific model. Without it,
+adapters that require explicit model lists (OpenCode, Goose, OpenClaw) write
+the full live/seeded free model catalog so every free model is selectable in
+their model pickers. Claude Code maps haiku to a fast non-reasoning model and
+sonnet/opus to the flagship reasoning model. Other harnesses (Aider, Codex,
+Hermes, Antigravity, JCode) set their default model to the primary free model
+and can switch freely via `/v1/models`.
 
 ## 4. Per-harness setup snippets (target output)
 
@@ -122,10 +124,20 @@ export AIDER_MODEL=<id>
 ### OpenCode — `~/.config/opencode/opencode.json`
 
 ```jsonc
-{ "provider": {
-    "bansos": { "npm": "@ai-sdk/openai-compatible",
-                "options": { "baseURL": "http://127.0.0.1:17070/v1" },
-                "models": { "<id>": {} } } } }
+{
+  "provider": {
+    "bansos": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "http://127.0.0.1:17070/v1" },
+      "models": {
+        "deepseek-v4-flash-free": {},
+        "mimo-v2.5-free": {},
+        "nemotron-3-ultra-free": {}
+        // ... all live free models registered by default
+      }
+    }
+  }
+}
 ```
 
 ### Codex — `~/.codex/config.toml`

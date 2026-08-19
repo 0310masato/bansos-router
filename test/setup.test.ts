@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { findAdapter } from "../src/adapters";
 import { applyMergeWrite, expandHome, parseJsonc, removeKeys } from "../src/cli/write";
+import { SEEDED_MODELS } from "../src/upstreams";
 
 test("expandHome uses os.homedir cross-platform", () => {
   const home = os.homedir();
@@ -58,6 +59,55 @@ test("applyMergeWrite merges seamlessly with existing JSONC content", () => {
   assert.ok(parsed.provider.custom);
   assert.ok(parsed.provider.bansos);
   assert.equal(parsed.provider.bansos.options.baseURL, "http://127.0.0.1:17070/v1");
+});
+
+test("opencode adapter populates all models by default or single model when specified", () => {
+  const adapter = findAdapter("opencode")!;
+
+  // default: all models
+  const allWrites = adapter.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "deepseek-v4-flash-free",
+    models: SEEDED_MODELS,
+    specificModel: false,
+  });
+  const allParsed = JSON.parse(allWrites[0]!.content);
+  assert.ok(Object.keys(allParsed.provider.bansos.models).length >= 10);
+  assert.ok(allParsed.provider.bansos.models["deepseek-v4-flash-free"]);
+  assert.ok(allParsed.provider.bansos.models["mimo-v2.5-free"]);
+  assert.ok(allParsed.provider.bansos.models["kilo-auto/free"]);
+
+  // specific model
+  const specificWrites = adapter.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "mimo-v2.5-free",
+    models: SEEDED_MODELS,
+    specificModel: true,
+  });
+  const specificParsed = JSON.parse(specificWrites[0]!.content);
+  assert.deepEqual(Object.keys(specificParsed.provider.bansos.models), ["mimo-v2.5-free"]);
+});
+
+test("goose and openclaw adapters populate all models by default or single model when specified", () => {
+  const goose = findAdapter("goose")!;
+  const gooseAll = goose.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "deepseek-v4-flash-free",
+    models: SEEDED_MODELS,
+    specificModel: false,
+  });
+  const gooseParsed = JSON.parse(gooseAll[0]!.content);
+  assert.ok(gooseParsed.models.length >= 10);
+
+  const openclaw = findAdapter("openclaw")!;
+  const openclawAll = openclaw.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "deepseek-v4-flash-free",
+    models: SEEDED_MODELS,
+    specificModel: false,
+  });
+  const openclawParsed = JSON.parse(openclawAll[0]!.content);
+  assert.ok(openclawParsed.models.providers.bansos.models.length >= 10);
 });
 
 test("findAdapter resolves 9router adapter", () => {

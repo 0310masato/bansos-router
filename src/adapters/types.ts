@@ -5,6 +5,7 @@ export interface SetupContext {
   baseUrl: string;
   defaultModel: string;
   models: ModelDef[];
+  specificModel?: boolean;
 }
 
 export interface ConfigWrite {
