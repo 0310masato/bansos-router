@@ -107,9 +107,15 @@ export default async function (pi: ExtensionAPI) {
       { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra", context_window: 1000000, max_tokens: 65536, reasoning: true },
       { id: "big-pickle", name: "Big Pickle", context_window: 200000, max_tokens: 32000, reasoning: true },
       { id: "laguna-s-2.1-free", name: "Laguna S 2.1", context_window: 262144, max_tokens: 32768, reasoning: true },
+      { id: "hy3-free", name: "Tencent HY3 Free (Zen)", context_window: 256000, max_tokens: 65536, reasoning: true },
+      { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning Free (Zen)", context_window: 1000000, max_tokens: 65536, reasoning: true },
+      { id: "kilo-auto/free", name: "Kilo Auto Free", context_window: 256000, max_tokens: 10000, reasoning: false },
+      { id: "stepfun/step-3.7-flash:free", name: "StepFun 3.7 Flash Free", context_window: 262144, max_tokens: 262144, reasoning: false },
+      { id: "tencent/hy3:free", name: "Tencent HY3 Free (Kilo)", context_window: 262144, max_tokens: 128000, reasoning: true },
+      { id: "DeepSeek-V4-Flash-0731", name: "DeepSeek V4 Flash (LLM7)", context_window: 400000, max_tokens: 131072, reasoning: true },
+      { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite", context_window: 256000, max_tokens: 65536, reasoning: false },
       { id: "default", name: "LLM7 Default", context_window: 128000, max_tokens: 8000, reasoning: false },
       { id: "fast", name: "LLM7 Fast", context_window: 128000, max_tokens: 8000, reasoning: false },
-      { id: "kilo-auto/free", name: "Kilo Auto Free", context_window: 256000, max_tokens: 10000, reasoning: false },
     ];
   }
 
