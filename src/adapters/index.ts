@@ -287,6 +287,54 @@ function jcodeAdapter(): HarnessAdapter {
   };
 }
 
+function nineRouterAdapter(): HarnessAdapter {
+  return {
+    id: "9router",
+    name: "9Router",
+    wire: "chat",
+    configPaths: ["~/.9router/db.json"],
+    render(ctx: SetupContext): ConfigWrite[] {
+      const db = {
+        providerNodes: [
+          {
+            id: "bansos",
+            name: "Bansos Router",
+            type: "custom",
+            prefix: "bansos",
+            apiType: "openai",
+            baseUrl: ctx.baseUrl,
+          },
+        ],
+        providerConnections: [
+          {
+            id: "bansos-default",
+            provider: "bansos",
+            authType: "api_key",
+            name: "Bansos Router",
+            priority: 1,
+            isActive: true,
+            apiKey: "bansos",
+          },
+        ],
+      };
+      return [
+        {
+          path: "~/.9router/db.json",
+          content: `${JSON.stringify(db, null, 2)}\n`,
+          mode: "merge",
+        },
+      ];
+    },
+    undo(): string[] {
+      return ["~/.9router/db.json"];
+    },
+    undoKeys: [
+      "providerNodes.bansos",
+      "providerConnections.bansos-default",
+    ],
+  };
+}
+
 export const ADAPTERS: HarnessAdapter[] = [
   claudeCodeAdapter(),
   aiderAdapter(),
@@ -297,6 +345,7 @@ export const ADAPTERS: HarnessAdapter[] = [
   openclawAdapter(),
   antigravityAdapter(),
   jcodeAdapter(),
+  nineRouterAdapter(),
 ];
 
 export function findAdapter(id: string): HarnessAdapter | undefined {

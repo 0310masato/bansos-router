@@ -51,7 +51,11 @@ function hasKeys(content: string, keys: string[]): boolean {
     if (!first) return false;
     let cur: unknown = obj;
     for (const p of first.split(".")) {
-      cur = (cur as Record<string, unknown> | undefined)?.[p];
+      if (Array.isArray(cur)) {
+        cur = cur.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === p);
+      } else {
+        cur = (cur as Record<string, unknown> | undefined)?.[p];
+      }
       if (cur === undefined) return false;
     }
     return true;

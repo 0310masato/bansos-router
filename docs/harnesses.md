@@ -33,6 +33,7 @@ Legend: 🟢 config-only · 🟢* config-only but needs M3 wire (not live yet) �
 | **Goose** | OpenAI Chat | `~/.config/goose/custom_providers/*.json` | 🟢 | `engine: "openai"`, `base_url`, model list |
 | **Antigravity CLI** | OpenAI Chat | `~/.config/antigravity/config.toml` | 🟢 | `base_url`, `model`, `api_key_env` (or inline) |
 | **JCode** | OpenAI Chat | `~/.jcode/config.toml` | 🟢 | `[providers.bansos] type="openai-compatible"`, `base_url` |
+| **9Router** | OpenAI Chat | `~/.9router/db.json` | 🟢 | Custom compatible `providerNodes` + `providerConnections` |
 | **Cline** | OpenAI Chat | `cline_mcp_settings` / settings UI | 🔵 | OpenAI-compatible base URL; works manually, no `bansos setup` adapter yet |
 | **Continue** | OpenAI Chat | `~/.continue/config.json` | 🔵 | OpenAI-compatible provider; works manually, no `bansos setup` adapter yet |
 | **Claude Desktop** | Anthropic Messages | — | 🔴 | No supported custom base URL; out of scope (hacky MITM only) |
@@ -182,6 +183,34 @@ default_model = "<id>"
 [providers.bansos]
 type = "openai-compatible"
 base_url = "http://127.0.0.1:17070/v1"
+```
+
+### 9Router — `~/.9router/db.json`
+
+```jsonc
+{
+  "providerNodes": [
+    {
+      "id": "bansos",
+      "name": "Bansos Router",
+      "type": "custom",
+      "prefix": "bansos",
+      "apiType": "openai",
+      "baseUrl": "http://127.0.0.1:17070/v1"
+    }
+  ],
+  "providerConnections": [
+    {
+      "id": "bansos-default",
+      "provider": "bansos",
+      "authType": "api_key",
+      "name": "Bansos Router",
+      "priority": 1,
+      "isActive": true,
+      "apiKey": "bansos"
+    }
+  ]
+}
 ```
 
 ### pi — extension (the only code adapter)

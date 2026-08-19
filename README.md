@@ -43,7 +43,7 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 | `bansosd` | Alias for the daemon (e.g. `bansosd --bg`) |
 
 Supported harnesses for `bansos setup`: `claude-code`, `aider`, `opencode`,
-`hermes`, `goose`, `openclaw`, `antigravity`, `jcode`. pi is handled by the
+`hermes`, `goose`, `openclaw`, `antigravity`, `jcode`, `9router`. pi is handled by the
 separate extension. `codex` writes its config too, but its `wire_api =
 "responses"` needs M3. See the roadmap.
 
@@ -54,7 +54,7 @@ separate extension. `codex` writes its config too, but its `wire_api =
   OpenAI Responses, for Codex CLI, lands in M3.
 - Keyless free upstreams only: OpenCode Zen, KiloCode gateway, and LLM7.
 - `bansos setup <harness>` writes config for Claude Code, Aider, OpenCode,
-  Codex, Hermes, Goose, OpenClaw, Antigravity, and JCode.
+  Codex, Hermes, Goose, OpenClaw, Antigravity, JCode, and 9Router.
 - The pi extension (`pi install npm:pi-bansos-router`) registers the `bansosr`
   provider, so every free model shows up in pi's `/model` picker. There is
   also a `/bansosr` command for status. If the daemon is not running when pi

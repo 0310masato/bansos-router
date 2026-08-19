@@ -62,6 +62,22 @@ function deepMerge(target: Record<string, unknown>, patch: Record<string, unknow
       target[k] !== null && typeof target[k] === "object" && !Array.isArray(target[k])
     ) {
       deepMerge(target[k] as Record<string, unknown>, v as Record<string, unknown>);
+    } else if (Array.isArray(v) && Array.isArray(target[k])) {
+      const targetArr = target[k] as unknown[];
+      for (const item of v) {
+        if (item && typeof item === "object" && "id" in item) {
+          const idx = targetArr.findIndex(
+            (t) => t && typeof t === "object" && (t as Record<string, unknown>).id === (item as Record<string, unknown>).id,
+          );
+          if (idx >= 0) {
+            targetArr[idx] = item;
+          } else {
+            targetArr.push(item);
+          }
+        } else {
+          targetArr.push(item);
+        }
+      }
     } else {
       target[k] = v;
     }
@@ -76,7 +92,7 @@ export function applyMergeWrite(existing: string | null, content: string): strin
   return `${JSON.stringify(base, null, 2)}\n`;
 }
 
-// delete dotted keys (e.g. "env.ANTHROPIC_BASE_URL") from a parsed json object
+// delete dotted keys (e.g. "env.ANTHROPIC_BASE_URL" or "providerNodes.bansos") from a parsed json object
 export function removeKeys(obj: Record<string, unknown>, keys: string[]): void {
   for (const kp of keys) {
     const parts = kp.split(".");
@@ -87,7 +103,13 @@ export function removeKeys(obj: Record<string, unknown>, keys: string[]): void {
       if (!cur || typeof cur !== "object") break;
     }
     if (cur && typeof cur === "object") {
-      delete (cur as Record<string, unknown>)[parts[parts.length - 1]!];
+      const last = parts[parts.length - 1]!;
+      if (Array.isArray(cur)) {
+        const idx = cur.findIndex((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === last);
+        if (idx >= 0) cur.splice(idx, 1);
+      } else {
+        delete (cur as Record<string, unknown>)[last];
+      }
     }
   }
 }

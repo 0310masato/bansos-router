@@ -8,7 +8,7 @@ import { runSetup } from "./setup";
 import { runDaemon, DEFAULT_PORT, MAX_PORT } from "../daemon";
 import { BANSOS_DIR, STATE_FILE, readJson } from "../daemon/state";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.2";
 
 function help(): void {
   console.log(`bansos — free, keyless coding models for every agent harness
@@ -26,7 +26,7 @@ Usage:
   bansos --version                             print version
 
 Harnesses: claude-code, aider, opencode, codex, hermes, goose,
-           openclaw, antigravity, jcode   (pi via the separate extension)
+           openclaw, antigravity, jcode, 9router   (pi via the separate extension)
 
 "bansosd" still works as an alias for the daemon (e.g. "bansosd --bg").
 `);
