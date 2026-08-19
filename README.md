@@ -139,6 +139,7 @@ npm run dev:daemon # run the daemon from source
 - [Wire protocols & translation](docs/protocols.md)
 - [Harness integration](docs/harnesses.md)
 - [Upstreams, catalog & relay](docs/upstreams.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
