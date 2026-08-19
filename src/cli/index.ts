@@ -20,6 +20,7 @@ Usage:
   bansos status                                daemon status
   bansos models                                list live catalog
   bansos refresh                               re-run health checks
+  bansos logs                                  tail the daemon log live (start it with --bg first)
   bansos relay <on|off|status|url|use|list|remove|deploy>  manage relay egress
   bansos doctor                                diagnose setup
   bansos --version                             print version
@@ -52,6 +53,8 @@ async function main(): Promise<number> {
       return runStart(argv.slice(1));
     case "stop":
       return runStop();
+    case "logs":
+      return runLogs();
     case "status":
     case "models":
     case "refresh":
@@ -118,7 +121,59 @@ async function runStart(args: string[]): Promise<number> {
   child.unref();
   fs.closeSync(out);
   console.log(`started daemon in background (pid ${child.pid}), log: ${logFile}`);
+  console.log(`watch it live with: bansos logs`);
   return 0;
+}
+
+// tail ~/.bansos/logs/bansosd.log in real time: same output the foreground
+// daemon prints, for a background (--bg) daemon. Polls the file size (500ms)
+// and prints appends; Ctrl+C (or SIGTERM) stops the watch.
+async function runLogs(): Promise<number> {
+  const logFile = path.join(BANSOS_DIR, "logs", "bansosd.log");
+  if (!fs.existsSync(logFile)) {
+    console.error(`bansos logs: no log file at ${logFile}`);
+    console.error(`  the daemon writes one when started with: bansos start --bg`);
+    return 1;
+  }
+
+  // show the last 50 lines as context before following
+  const content = fs.readFileSync(logFile, "utf8");
+  const lines = content.split("\n");
+  const context = lines.length > 50 ? lines.slice(lines.length - 50) : lines;
+  if (context.some((l) => l !== "")) {
+    process.stdout.write(`${context.join("\n").trimStart()}\n`);
+  }
+  process.stdout.write("(watching the daemon log, Ctrl+C to stop)\n");
+
+  let size = fs.statSync(logFile).size;
+  const timer = setInterval(() => {
+    let st;
+    try {
+      st = fs.statSync(logFile);
+    } catch {
+      process.stdout.write("\nbansos logs: log file removed, stopping\n");
+      process.exit(0);
+    }
+    if (st.size === size) return;
+    if (st.size < size) size = 0; // truncated or rotated: read from the start again
+    const fd = fs.openSync(logFile, "r");
+    const buf = Buffer.alloc(st.size - size);
+    fs.readSync(fd, buf, 0, buf.length, size);
+    fs.closeSync(fd);
+    size = st.size;
+    process.stdout.write(buf.toString("utf8"));
+  }, 500);
+
+  return await new Promise<number>((resolve) => {
+    process.once("SIGINT", () => {
+      clearInterval(timer);
+      resolve(0);
+    });
+    process.once("SIGTERM", () => {
+      clearInterval(timer);
+      resolve(0);
+    });
+  });
 }
 
 function isAlive(pid: number): boolean {
