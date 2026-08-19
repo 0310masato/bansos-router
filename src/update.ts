@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "0.1.2";
+export const VERSION = "0.1.3";
 
 const CACHE_FILE = path.join(os.homedir(), ".bansos", "update-check.json");
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours

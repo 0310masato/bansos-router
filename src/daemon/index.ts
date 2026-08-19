@@ -6,6 +6,7 @@ import { spawn } from "node:child_process";
 import { loadConfig, writeJsonAtomic, STATE_FILE, BANSOS_DIR } from "./state";
 import { createLogger } from "../logger";
 import { buildUpstreams, SEEDED_MODELS } from "../upstreams";
+import { VERSION } from "../update";
 import { RuntimeCatalog } from "./catalog";
 import { RateLimiter } from "./rate-limit";
 import { createServer } from "./server";
@@ -27,7 +28,7 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg === "--bind") args.bind = argv[++i];
     else if (arg === "--bg") args.bg = true;
     else if (arg === "--version" || arg === "-v") {
-      console.log("0.1.0");
+      console.log(VERSION);
       process.exit(0);
     }
     else if (arg === "--help" || arg === "-h") {
