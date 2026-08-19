@@ -1,4 +1,3 @@
-
 import { randomUUID } from "node:crypto";
 import { modelDef, type ModelDef, type Upstream } from "./types";
 
@@ -62,6 +61,26 @@ export const ZEN_MODELS: ModelDef[] = [
     maxTokens: 32_768,
     input: ["text"],
     compat: { supportsReasoningEffort: true, supportsDeveloperRole: false },
+  }),
+  modelDef({
+    id: "hy3-free",
+    name: "Tencent HY3 Free (Zen)",
+    source: "zen",
+    reasoning: true,
+    contextWindow: 256_000,
+    maxTokens: 65_536,
+    input: ["text"],
+    compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
+  }),
+  modelDef({
+    id: "nemotron-3.5-lightning-free",
+    name: "Nemotron 3.5 Lightning Free (Zen)",
+    source: "zen",
+    reasoning: true,
+    contextWindow: 1_000_000,
+    maxTokens: 65_536,
+    input: ["text"],
+    compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
   }),
 ];
 

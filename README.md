@@ -82,6 +82,8 @@ are token counts.
 | `nemotron-3-ultra-free` | yes | 1M | 65k |
 | `big-pickle` | yes | 200k | 32k |
 | `laguna-s-2.1-free` | yes | 262k | 32k |
+| `hy3-free` | yes | 256k | 65k |
+| `nemotron-3.5-lightning-free` | yes | 1M | 65k |
 
 ### KiloCode gateway
 
