@@ -19,6 +19,7 @@ export interface StatusPayload {
   port: number;
   modelCount: number;
   models: string[];
+  relay?: { enabled: boolean; url: string };
 }
 
 export interface ServerOptions {
@@ -419,21 +420,25 @@ export function createServer(opts: ServerOptions): http.Server {
     }
 
     if (url === "/healthz") {
+      const relay = loadRelayState();
       sendJson(res, 200, {
         status: "ok",
         uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
         modelCount: catalog.models.length,
+        relay: { enabled: relay.enabled, url: relay.url },
       });
       return;
     }
 
     if (url === "/bansos/status") {
+      const relay = loadRelayState();
       const payload: StatusPayload = {
         status: "ok",
         uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
         port,
         modelCount: catalog.models.length,
         models: catalog.models.map((m) => m.id),
+        relay: { enabled: relay.enabled, url: relay.url },
       };
       sendJson(res, 200, payload);
       return;

@@ -139,7 +139,21 @@ export default async function (pi: ExtensionAPI) {
         return;
       }
       const liveModels = await fetchModels();
-      ctx.ui.notify(`pi-bansos-router v${EXTENSION_VERSION} · daemon online (${liveModels.length} models active)`, "info");
+      let relayInfo = "";
+      try {
+        const res = await fetch(HEALTHZ_URL, { signal: AbortSignal.timeout(1000) });
+        if (res.ok) {
+          const body = (await res.json()) as { relay?: { enabled: boolean; url: string } };
+          if (body.relay?.enabled && body.relay.url) {
+            relayInfo = `, relay: ${body.relay.url}`;
+          } else {
+            relayInfo = ", relay: off";
+          }
+        }
+      } catch {
+        // ignore
+      }
+      ctx.ui.notify(`pi-bansos-router v${EXTENSION_VERSION} · daemon online (${liveModels.length} models${relayInfo})`, "info");
 
       const update = await checkExtensionUpdate();
       if (update.hasUpdate) {

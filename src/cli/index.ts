@@ -255,6 +255,7 @@ interface DaemonStatus {
   port: number;
   modelCount: number;
   models: string[];
+  relay?: { enabled: boolean; url: string };
 }
 
 // find every running daemon: the configured port, the last known port in
@@ -301,6 +302,11 @@ async function runStatus(): Promise<number> {
   for (const [i, d] of daemons.entries()) {
     console.log(`daemon:   ok (port ${d.port})`);
     console.log(`models:   ${d.modelCount}`);
+    if (d.relay?.enabled && d.relay.url) {
+      console.log(`relay:    on (${d.relay.url})`);
+    } else {
+      console.log(`relay:    off (direct)`);
+    }
     console.log(`alive:    ${d.models.join(", ") || "(none)"}`);
     if (i < daemons.length - 1) console.log("");
   }

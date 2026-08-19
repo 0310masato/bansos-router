@@ -13,8 +13,13 @@ export async function runDoctor(_argv: string[]): Promise<number> {
   // 1. daemon reachable?
   try {
     const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(2000) });
-    const body = (await res.json()) as { modelCount?: number };
+    const body = (await res.json()) as { modelCount?: number; relay?: { enabled: boolean; url: string } };
     console.log(`✓ daemon      ok at ${base} (${body.modelCount ?? "?"} models)`);
+    if (body.relay?.enabled && body.relay.url) {
+      console.log(`✓ relay       on (${body.relay.url})`);
+    } else {
+      console.log(`· relay       disabled (direct)`);
+    }
   } catch {
     console.error(`✗ daemon      not reachable at ${base}`);
     console.error(`  fix: run "bansos start" (or "bansosd") in another terminal`);
