@@ -139,7 +139,7 @@ export default async function (pi: ExtensionAPI) {
         return;
       }
       const liveModels = await fetchModels();
-      ctx.ui.notify(`bansos daemon online (${liveModels.length} models active)`, "info");
+      ctx.ui.notify(`pi-bansos-router v${EXTENSION_VERSION} · daemon online (${liveModels.length} models active)`, "info");
 
       const update = await checkExtensionUpdate();
       if (update.hasUpdate) {
