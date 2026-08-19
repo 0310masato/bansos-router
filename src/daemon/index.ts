@@ -13,8 +13,8 @@ import { RuntimeCatalog } from "./catalog";
 import { RateLimiter } from "./rate-limit";
 import { createServer } from "./server";
 
-const DEFAULT_PORT = 17070;
-const MAX_PORT = 17090;
+export const DEFAULT_PORT = 17070;
+export const MAX_PORT = 17090;
 
 interface CliArgs {
   port?: number;

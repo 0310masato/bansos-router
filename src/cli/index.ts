@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { runDoctor } from "./doctor";
 import { runRelay } from "./relay";
 import { runSetup } from "./setup";
-import { runDaemon } from "../daemon";
+import { runDaemon, DEFAULT_PORT, MAX_PORT } from "../daemon";
 import { BANSOS_DIR, STATE_FILE, readJson } from "../daemon/state";
 
 const VERSION = "0.1.0";
@@ -56,6 +56,7 @@ async function main(): Promise<number> {
     case "logs":
       return runLogs();
     case "status":
+      return runStatus();
     case "models":
     case "refresh":
       return runStatusOrModels(argv[0]);
@@ -250,19 +251,64 @@ async function runStop(): Promise<number> {
   return 0;
 }
 
+interface DaemonStatus {
+  status: string;
+  port: number;
+  modelCount: number;
+  models: string[];
+}
+
+// find every running daemon: the configured port, the last known port in
+// state.json, and the full auto-bump range the daemon binds on. A daemon
+// that landed on a bumped port (17070 busy) is still reported.
+async function probeDaemonPorts(): Promise<DaemonStatus[]> {
+  const config = await import("../daemon/state").then((m) => m.loadConfig());
+  const state = readJson<{ port?: number }>(STATE_FILE);
+  const ports = new Set<number>([config.port]);
+  if (state?.port) ports.add(state.port);
+  for (let p = DEFAULT_PORT; p <= MAX_PORT; p++) ports.add(p);
+
+  const results = await Promise.all(
+    [...ports].map(async (port) => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/bansos/status`, {
+          signal: AbortSignal.timeout(400),
+        });
+        if (!res.ok) return null;
+        const body = (await res.json()) as DaemonStatus;
+        return body.status === "ok" ? body : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results
+    .filter((r): r is DaemonStatus => r !== null)
+    .sort((a, b) => a.port - b.port);
+}
+
+async function runStatus(): Promise<number> {
+  const daemons = await probeDaemonPorts();
+  if (daemons.length === 0) {
+    console.error(
+      `bansos: no daemon reachable (probed ports ${DEFAULT_PORT}-${MAX_PORT}), start one with "bansos start"`,
+    );
+    return 1;
+  }
+  for (const [i, d] of daemons.entries()) {
+    console.log(`daemon:   ok (port ${d.port})`);
+    console.log(`models:   ${d.modelCount}`);
+    console.log(`alive:    ${d.models.join(", ") || "(none)"}`);
+    if (i < daemons.length - 1) console.log("");
+  }
+  return 0;
+}
+
 async function runStatusOrModels(cmd: "status" | "models" | "refresh"): Promise<number> {
   const config = await import("../daemon/state").then((m) => m.loadConfig());
   const base = `http://127.0.0.1:${config.port}`;
 
   try {
-    if (cmd === "status") {
-      const res = await fetch(`${base}/bansos/status`);
-      const body = (await res.json()) as { port: number; modelCount: number; models: string[] };
-      console.log(`daemon:   ok (port ${body.port})`);
-      console.log(`models:   ${body.modelCount}`);
-      console.log(`alive:    ${body.models.join(", ") || "(none)"}`);
-      return 0;
-    }
     if (cmd === "models") {
       const res = await fetch(`${base}/v1/models`);
       const body = (await res.json()) as { data: Array<{ id: string }> };

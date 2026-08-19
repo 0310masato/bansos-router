@@ -33,7 +33,7 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 | `bansos start [--bg] [--port N] [--bind H]` | Run the daemon (foreground, or detached with `--bg`) |
 | `bansos logs` | Tail the daemon log in real time (for a `--bg` daemon), same output as `bansos start` |
 | `bansos stop` | Stop all running daemons |
-| `bansos status` | Daemon status: port, model count, alive models |
+| `bansos status` | Daemon status (port, model count, alive models); reports every running daemon on the auto-bump range (17070-17090) |
 | `bansos models` | List live catalog from `/v1/models` |
 | `bansos refresh` | Ask the daemon to re-run health checks now |
 | `bansos setup <harness...> [--model <id>] [--dry-run] [--undo]` | Write, update, or undo harness configs |
