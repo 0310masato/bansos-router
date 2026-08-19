@@ -80,7 +80,12 @@ function opencodeAdapter(): HarnessAdapter {
     id: "opencode",
     name: "OpenCode",
     wire: "chat",
-    configPaths: ["~/.config/opencode/opencode.json", "opencode.json"],
+    configPaths: [
+      "~/.config/opencode/opencode.json",
+      "~/.config/opencode/opencode.jsonc",
+      "opencode.json",
+      "opencode.jsonc",
+    ],
     render(ctx: SetupContext): ConfigWrite[] {
       const provider = {
         bansos: {
@@ -98,7 +103,12 @@ function opencodeAdapter(): HarnessAdapter {
       ];
     },
     undo(): string[] {
-      return ["~/.config/opencode/opencode.json"];
+      return [
+        "~/.config/opencode/opencode.json",
+        "~/.config/opencode/opencode.jsonc",
+        "opencode.json",
+        "opencode.jsonc",
+      ];
     },
     undoKeys: ["provider.bansos"],
   };
@@ -201,7 +211,11 @@ function openclawAdapter(): HarnessAdapter {
     id: "openclaw",
     name: "OpenClaw",
     wire: "chat",
-    configPaths: ["~/.openclaw/config.json"],
+    configPaths: [
+      "~/.openclaw/config.json",
+      "~/.openclaw/openclaw.json",
+      "openclaw.json",
+    ],
     render(ctx: SetupContext): ConfigWrite[] {
       const config = {
         models: {
@@ -222,7 +236,11 @@ function openclawAdapter(): HarnessAdapter {
       ];
     },
     undo(): string[] {
-      return ["~/.openclaw/config.json"];
+      return [
+        "~/.openclaw/config.json",
+        "~/.openclaw/openclaw.json",
+        "openclaw.json",
+      ];
     },
     undoKeys: ["models.providers.bansos"],
   };

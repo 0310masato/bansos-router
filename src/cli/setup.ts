@@ -6,6 +6,7 @@ import {
   applyBlockWrite,
   applyMergeWrite,
   expandHome,
+  parseJsonc,
   removeBlock,
   removeKeys,
   writeConfig,
@@ -39,62 +40,78 @@ Harnesses: ${ADAPTERS.map((a) => a.id).join(", ")}
   return args;
 }
 
+function resolveTargetFile(adapter: HarnessAdapter, defaultPath: string): string {
+  const found = adapter.configPaths
+    .map(expandHome)
+    .find((p) => fs.existsSync(p));
+  if (found) {
+    const matched = adapter.configPaths.find((cp) => expandHome(cp) === found);
+    if (matched) return matched;
+  }
+  return defaultPath;
+}
+
 function applyAdapter(adapter: HarnessAdapter, ctx: SetupContext): number {
   let failed = 0;
   for (const write of adapter.render(ctx)) {
-    const existing = fs.existsSync(expandHome(write.path))
-      ? fs.readFileSync(expandHome(write.path), "utf8")
+    const targetPath = resolveTargetFile(adapter, write.path);
+    const fullPath = expandHome(targetPath);
+    const existing = fs.existsSync(fullPath)
+      ? fs.readFileSync(fullPath, "utf8")
       : null;
     let content: string;
     if (write.mode === "merge") {
       try {
         content = applyMergeWrite(existing, write.content);
       } catch {
-        console.error(`  ✗ ${write.path}: existing file is not valid JSON, skipping`);
+        console.error(`  ✗ ${targetPath}: existing file is not valid JSON, skipping`);
         failed++;
         continue;
       }
     } else {
       content = applyBlockWrite(existing ?? "", write.content, write.markers!);
     }
-    writeConfig(write.path, content);
-    console.log(`  ✓ wrote ${write.path}`);
+    writeConfig(targetPath, content);
+    console.log(`  ✓ wrote ${targetPath}`);
   }
   return failed;
 }
 
 function undoAdapter(adapter: HarnessAdapter, ctx: SetupContext): void {
-  for (const write of adapter.render(ctx)) {
-    const full = expandHome(write.path);
+  const candidatePaths = Array.from(new Set([...adapter.configPaths, ...adapter.undo(ctx)]));
+  for (const writePath of candidatePaths) {
+    const full = expandHome(writePath);
     if (!fs.existsSync(full)) {
-      console.log(`  · ${write.path} not present`);
       continue;
     }
     const existing = fs.readFileSync(full, "utf8");
 
-    if (write.mode === "merge" && adapter.undoKeys) {
+    if (adapter.undoKeys) {
       let obj: Record<string, unknown>;
       try {
-        obj = JSON.parse(existing) as Record<string, unknown>;
+        obj = parseJsonc(existing);
       } catch {
-        console.log(`  · ${write.path} not valid JSON, skipping`);
+        console.log(`  · ${writePath} not valid JSON, skipping`);
         continue;
       }
       removeKeys(obj, adapter.undoKeys);
       if (Object.keys(obj).length === 0) {
         fs.rmSync(full);
-        console.log(`  ✗ removed ${write.path}`);
+        console.log(`  ✗ removed ${writePath}`);
       } else {
-        writeConfig(write.path, `${JSON.stringify(obj, null, 2)}\n`);
-        console.log(`  ✗ ${write.path}: bansos keys removed`);
+        writeConfig(writePath, `${JSON.stringify(obj, null, 2)}\n`);
+        console.log(`  ✗ ${writePath}: bansos keys removed`);
       }
-    } else if (write.mode === "overwrite-block" && write.markers) {
-      const out = removeBlock(existing, write.markers);
-      if (out === existing) {
-        console.log(`  · ${write.path}: no bansos block found`);
-      } else {
-        writeConfig(write.path, out);
-        console.log(`  ✗ ${write.path}: bansos block removed`);
+    } else {
+      const markers = adapter.render(ctx)[0]?.markers;
+      if (markers) {
+        const out = removeBlock(existing, markers);
+        if (out === existing) {
+          console.log(`  · ${writePath}: no bansos block found`);
+        } else {
+          writeConfig(writePath, out);
+          console.log(`  ✗ ${writePath}: bansos block removed`);
+        }
       }
     }
   }
@@ -127,7 +144,8 @@ export async function runSetup(argv: string[]): Promise<number> {
       undoAdapter(adapter, ctx);
     } else if (args.dryRun) {
       for (const write of adapter.render(ctx)) {
-        console.log(`  → ${write.path}`);
+        const targetPath = resolveTargetFile(adapter, write.path);
+        console.log(`  → ${targetPath}`);
         console.log(write.content.replace(/^/gm, "    "));
       }
     } else {

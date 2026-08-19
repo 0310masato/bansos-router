@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { ADAPTERS } from "../adapters";
 import { loadConfig } from "../daemon/state";
 import { START_MARKER } from "../adapters/types";
-import { expandHome } from "./write";
+import { expandHome, parseJsonc } from "./write";
 
 export async function runDoctor(_argv: string[]): Promise<number> {
   const config = loadConfig();
@@ -46,7 +46,7 @@ export async function runDoctor(_argv: string[]): Promise<number> {
 
 function hasKeys(content: string, keys: string[]): boolean {
   try {
-    const obj = JSON.parse(content) as Record<string, unknown>;
+    const obj = parseJsonc(content);
     const first = keys[0];
     if (!first) return false;
     let cur: unknown = obj;

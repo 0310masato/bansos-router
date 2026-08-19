@@ -1,8 +1,62 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export function expandHome(p: string): string {
-  return p.startsWith("~/") ? `${process.env.HOME ?? ""}/${p.slice(2)}` : p;
+  if (p === "~") {
+    return os.homedir();
+  }
+  if (p.startsWith("~/") || p.startsWith("~\\")) {
+    return path.join(os.homedir(), p.slice(2));
+  }
+  return p;
+}
+
+// robust zero-dependency JSONC / JSON parser (strips line/block comments & trailing commas)
+export function parseJsonc(text: string): Record<string, unknown> {
+  const clean = text.replace(/^\uFEFF/, "");
+  let out = "";
+  let inString = false;
+  let quoteChar = "";
+  let isEscaped = false;
+
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i]!;
+    const next = clean[i + 1];
+
+    if (inString) {
+      out += ch;
+      if (isEscaped) {
+        isEscaped = false;
+      } else if (ch === "\\") {
+        isEscaped = true;
+      } else if (ch === quoteChar) {
+        inString = false;
+      }
+    } else {
+      if (ch === '"' || ch === "'") {
+        inString = true;
+        quoteChar = ch;
+        out += ch;
+      } else if (ch === "/" && next === "/") {
+        // line comment: skip until newline
+        while (i < clean.length && clean[i] !== "\n") i++;
+        if (i < clean.length) out += clean[i]; // preserve newline
+      } else if (ch === "/" && next === "*") {
+        // block comment: skip until */
+        i += 2;
+        while (i < clean.length && !(clean[i] === "*" && clean[i + 1] === "/")) i++;
+        i++; // skip /
+      } else {
+        out += ch;
+      }
+    }
+  }
+
+  // strip trailing commas before } or ]
+  out = out.replace(/,(\s*[}\]])/g, "$1");
+
+  return JSON.parse(out) as Record<string, unknown>;
 }
 
 function markerBlock(content: string, markers: [string, string]): string {
@@ -84,10 +138,10 @@ function deepMerge(target: Record<string, unknown>, patch: Record<string, unknow
   }
 }
 
-// merge a rendered json fragment into the existing file (valid json out)
+// merge a rendered json/jsonc fragment into the existing file (valid formatted json out)
 export function applyMergeWrite(existing: string | null, content: string): string {
-  const patch = JSON.parse(content) as Record<string, unknown>;
-  const base = existing ? (JSON.parse(existing) as Record<string, unknown>) : {};
+  const patch = parseJsonc(content);
+  const base = existing && existing.trim().length > 0 ? parseJsonc(existing) : {};
   deepMerge(base, patch);
   return `${JSON.stringify(base, null, 2)}\n`;
 }
