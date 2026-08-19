@@ -3,6 +3,7 @@ import { ADAPTERS } from "../adapters";
 import { loadConfig } from "../daemon/state";
 import { START_MARKER } from "../adapters/types";
 import { expandHome, parseJsonc } from "./write";
+import { checkUpdate } from "../update";
 
 export async function runDoctor(_argv: string[]): Promise<number> {
   const config = loadConfig();
@@ -39,6 +40,12 @@ export async function runDoctor(_argv: string[]): Promise<number> {
     } else {
       console.log(`· ${adapter.id.padEnd(12)} file exists but no bansos config (${found})`);
     }
+  }
+
+  // 3. update available?
+  const update = await checkUpdate();
+  if (update.hasUpdate) {
+    console.log(`\nUpdate available: ${update.current} -> ${update.latest} (run: npm i -g bansos-router)`);
   }
 
   return failures > 0 ? 1 : 0;

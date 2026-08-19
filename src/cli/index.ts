@@ -7,8 +7,7 @@ import { runRelay } from "./relay";
 import { runSetup } from "./setup";
 import { runDaemon, DEFAULT_PORT, MAX_PORT } from "../daemon";
 import { BANSOS_DIR, STATE_FILE, readJson } from "../daemon/state";
-
-const VERSION = "0.1.2";
+import { VERSION, checkUpdate } from "../update";
 
 function help(): void {
   console.log(`bansos — free, keyless coding models for every agent harness
@@ -293,6 +292,10 @@ async function runStatus(): Promise<number> {
     console.error(
       `bansos: no daemon reachable (probed ports ${DEFAULT_PORT}-${MAX_PORT}), start one with "bansos start"`,
     );
+    const update = await checkUpdate();
+    if (update.hasUpdate) {
+      console.log(`\nUpdate available: ${update.current} -> ${update.latest} (run: npm i -g bansos-router)`);
+    }
     return 1;
   }
   for (const [i, d] of daemons.entries()) {
@@ -300,6 +303,10 @@ async function runStatus(): Promise<number> {
     console.log(`models:   ${d.modelCount}`);
     console.log(`alive:    ${d.models.join(", ") || "(none)"}`);
     if (i < daemons.length - 1) console.log("");
+  }
+  const update = await checkUpdate();
+  if (update.hasUpdate) {
+    console.log(`\nUpdate available: ${update.current} -> ${update.latest} (run: npm i -g bansos-router)`);
   }
   return 0;
 }

@@ -6,6 +6,33 @@ const DEFAULT_PORT = 17070;
 const BASE_URL = `http://127.0.0.1:${DEFAULT_PORT}/v1`;
 const HEALTHZ_URL = `http://127.0.0.1:${DEFAULT_PORT}/healthz`;
 const MODELS_URL = `http://127.0.0.1:${DEFAULT_PORT}/v1/models`;
+const EXTENSION_VERSION = "0.1.2";
+
+function isNewer(current: string, latest: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  const [cMaj = 0, cMin = 0, cPat = 0] = parse(current);
+  const [lMaj = 0, lMin = 0, lPat = 0] = parse(latest);
+  if (lMaj !== cMaj) return lMaj > cMaj;
+  if (lMin !== cMin) return lMin > cMin;
+  return lPat > cPat;
+}
+
+async function checkExtensionUpdate(): Promise<{ hasUpdate: boolean; latest: string; current: string }> {
+  try {
+    const res = await fetch("https://registry.npmjs.org/pi-bansos-router/latest", {
+      signal: AbortSignal.timeout(1000),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { version?: string };
+      if (data.version && isNewer(EXTENSION_VERSION, data.version)) {
+        return { hasUpdate: true, latest: data.version, current: EXTENSION_VERSION };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { hasUpdate: false, latest: EXTENSION_VERSION, current: EXTENSION_VERSION };
+}
 
 interface ModelItem {
   id: string;
@@ -113,6 +140,11 @@ export default async function (pi: ExtensionAPI) {
       }
       const liveModels = await fetchModels();
       ctx.ui.notify(`bansos daemon online (${liveModels.length} models active)`, "info");
+
+      const update = await checkExtensionUpdate();
+      if (update.hasUpdate) {
+        ctx.ui.notify(`Update available for pi-bansos-router: ${update.current} -> ${update.latest} (run: pi update)`, "info");
+      }
     },
   });
 
