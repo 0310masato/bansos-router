@@ -37,7 +37,7 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
       );
     } else {
       const tag = lvl === "error" ? "✗" : lvl === "warn" ? "⚠" : lvl === "debug" ? "·" : "✓";
-      process.stdout.write(`${tag} ${line}\n`);
+      process.stdout.write(`${tag} ${line}${renderFields(fields)}\n`);
     }
   };
 
@@ -48,4 +48,19 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
     error: (m, f) => write("error", m, f),
     child: (p) => createLogger({ level, json, prefix: p }),
   };
+}
+
+// plain mode renders fields so the log tail stays informative (model, tokens, ...)
+function renderFields(fields?: Record<string, unknown>): string {
+  if (!fields || Object.keys(fields).length === 0) return "";
+  return ` ${Object.entries(fields)
+    .map(([k, v]) => `${k}=${fmtValue(v)}`)
+    .join(" ")}`;
+}
+
+function fmtValue(v: unknown): string {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return v.map(fmtValue).join(",");
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }

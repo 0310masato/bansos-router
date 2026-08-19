@@ -1,5 +1,5 @@
 import http from "node:http";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import type { Logger } from "../logger";
 import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";
 import {
@@ -78,6 +78,45 @@ async function readBody(
 
 // openai chat in -> resolve model -> forward raw body to its upstream
 // stream the response back unchanged (keyless upstreams speak openai chat)
+
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export function extractUsage(json: unknown): TokenUsage | null {
+  const usage = (json as { usage?: { prompt_tokens?: number; completion_tokens?: number } })
+    ?.usage;
+  if (!usage || usage.prompt_tokens == null || usage.completion_tokens == null) return null;
+  return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
+}
+
+// pass-through that watches the tail of the SSE bytes for a usage object and
+// logs it once.
+export function logUsageTransform(model: string, upstream: string, log: Logger): Transform {
+  let tail = "";
+  let reported = false;
+  return new Transform({
+    transform(chunk, _enc, cb) {
+      tail = `${tail}${chunk.toString("utf8")}`.slice(-16384);
+      if (!reported) {
+        const m = /"usage"\s*:\s*\{[^}]+\}/.exec(tail);
+        if (m) {
+          try {
+            const usage = extractUsage(JSON.parse(`{${m[0]}}`));
+            if (usage) {
+              reported = true;
+              log.info("chat done", { model, upstream, ...usage });
+            }
+          } catch {
+            // not a usable usage object, keep scanning
+          }
+        }
+      }
+      cb(null, chunk);
+    },
+  });
+}
 async function handleChat(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -168,14 +207,29 @@ async function handleChat(
       return;
     }
 
-    // 2xx: stream response as-is
-    res.writeHead(upstreamRes.status, {
-      "content-type": upstreamRes.headers.get("content-type") ?? "application/json",
-    });
+    // 2xx: forward the response, capturing token usage on the way
+    const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
+    res.writeHead(upstreamRes.status, { "content-type": contentType });
+
+    if (!parsed.value.stream) {
+      // non-stream: buffer once to read usage, then forward the exact bytes
+      const text = await upstreamRes.text();
+      try {
+        const usage = extractUsage(JSON.parse(text));
+        if (usage) log.info("chat done", { model: model.id, upstream: upstream.id, ...usage });
+      } catch {
+        // usage is informational only; the plain response still goes out
+      }
+      res.end(text);
+      return;
+    }
+
     if (upstreamRes.body) {
       Readable.fromWeb(
         upstreamRes.body as import("node:stream/web").ReadableStream,
-      ).pipe(res);
+      )
+        .pipe(logUsageTransform(model.id, upstream.id, log))
+        .pipe(res);
     } else {
       res.end();
     }
@@ -263,6 +317,8 @@ async function handleAnthropic(
         return;
       }
       const message = openAiCompletionToAnthropicMessage(json, model.id);
+      const usage = extractUsage(json);
+      if (usage) log.info("anthropic done", { model: model.id, upstream: upstream.id, ...usage });
       sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
       return;
     }
@@ -273,6 +329,7 @@ async function handleAnthropic(
       "connection": "keep-alive",
     });
     const encoder = new AnthropicStreamEncoder();
+    let streamUsage: TokenUsage | null = null;
     if (upstreamRes.body) {
       for await (const frame of readSseStream(upstreamRes.body)) {
         if (frame.data === "[DONE]") {
@@ -281,8 +338,13 @@ async function handleAnthropic(
         }
         let json: any;
         try { json = JSON.parse(frame.data); } catch { continue; }
+        const usage = extractUsage(json);
+        if (usage) streamUsage = usage;
         for (const ev of encoder.push(json, model.id)) res.write(ev);
       }
+    }
+    if (streamUsage) {
+      log.info("anthropic done", { model: model.id, upstream: upstream.id, ...streamUsage });
     }
     res.end();
   } catch (err) {
