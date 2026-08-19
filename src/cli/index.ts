@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { runDoctor } from "./doctor";
+import { runPing } from "./ping";
 import { runRelay } from "./relay";
 import { runSetup } from "./setup";
 import { runDaemon, DEFAULT_PORT, MAX_PORT } from "../daemon";
@@ -18,6 +19,7 @@ Usage:
   bansos setup <harness...> [--model <id>] [--dry-run] [--undo]  write harness config
   bansos status                                daemon status
   bansos models                                list live catalog
+  bansos ping [model]                          probe health and latency of model(s)
   bansos refresh                               re-run health checks
   bansos logs                                  tail the daemon log live (start it with --bg first)
   bansos relay <on|off|status|url|use|list|remove|deploy>  manage relay egress
@@ -56,6 +58,8 @@ async function main(): Promise<number> {
       return runLogs();
     case "status":
       return runStatus();
+    case "ping":
+      return runPing(argv.slice(1));
     case "models":
     case "refresh":
       return runStatusOrModels(argv[0]);

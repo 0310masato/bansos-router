@@ -35,6 +35,7 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 | `bansos stop` | Stop all running daemons |
 | `bansos status` | Daemon status (port, model count, alive models); reports every running daemon on the auto-bump range (17070-17090) |
 | `bansos models` | List live catalog from `/v1/models` |
+| `bansos ping [model]` | Probe live latency and rate-limit status of all models (or a specific model) |
 | `bansos refresh` | Ask the daemon to re-run health checks now |
 | `bansos setup <harness...> [--model <id>] [--dry-run] [--undo]` | Write, update, or undo harness configs |
 | `bansos relay <on\|off\|status\|url\|use\|list\|remove>` | Manage relay egress (deploy comes in M4) |

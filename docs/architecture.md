@@ -110,6 +110,7 @@ The core server, run via `bansos start` (foreground or `--bg`) or the
 | `bansos setup <harness>` | Write/update the harness config (see `docs/harnesses.md`) |
 | `bansos status` | Show daemon state: port, alive models, relay on/off, request count |
 | `bansos models` | List catalog with liveness |
+| `bansos ping [model]` | Probe live health, latency, and rate-limit status of models |
 | `bansos refresh` | Re-run health checks now |
 | `bansos relay on/off/status` | Toggle relay egress live |
 | `bansos relay url <URL>` / `use <URL>` / `list` / `remove <URL>` | Manage saved relays |

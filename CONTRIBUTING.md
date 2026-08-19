@@ -55,7 +55,7 @@ npm run build      # esbuild, outputs extensions/pi/dist/index.js
 
 ```
 src/
-  cli/            CLI commands: index (dispatch), setup, doctor, write, relay
+  cli/            CLI commands: index (dispatch), setup, doctor, ping, write, relay
   adapters/       harness adapters (claude-code, opencode, goose, openclaw, ...)
   protocols/      wire protocol parsing + translation (anthropic, openai-chat, responses, stream)
   upstreams/      keyless upstream definitions (zen, kilo, llm7, local) + catalog seeds
