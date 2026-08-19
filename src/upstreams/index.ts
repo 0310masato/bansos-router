@@ -1,4 +1,4 @@
-import { llm7Upstream, llm7AliasModels } from "./llm7";
+import { llm7Upstream, LLM7_MODELS } from "./llm7";
 import { kiloUpstream, KILO_MODELS } from "./kilo";
 import { createLocalUpstream, type LocalUpstreamConfig } from "./local";
 import type { ModelDef, Upstream } from "./types";
@@ -9,7 +9,7 @@ export const DEFAULT_UPSTREAMS: Upstream[] = [zenUpstream, kiloUpstream, llm7Ups
 export const SEEDED_MODELS: ModelDef[] = [
   ...ZEN_MODELS,
   ...KILO_MODELS,
-  ...llm7AliasModels(),
+  ...LLM7_MODELS,
 ];
 
 export function buildUpstreams(locals: LocalUpstreamConfig[] = []): Upstream[] {

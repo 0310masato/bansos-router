@@ -194,18 +194,28 @@ async function handleChat(
     // (upstream may return HTML — Cloudflare/nginx error pages)
     if (upstreamRes.status >= 400) {
       const text = await upstreamRes.text();
+      let errorMsg = text.slice(0, 256) || "upstream error";
+      let jsonPayload: unknown;
       try {
         const json = JSON.parse(text);
-        sendJson(res, upstreamRes.status, json);
+        jsonPayload = json;
+        errorMsg = json?.error?.message ?? json?.message ?? errorMsg;
       } catch {
-        sendJson(res, upstreamRes.status, {
+        jsonPayload = {
           error: {
-            message: text.slice(0, 256) || "upstream error",
+            message: errorMsg,
             type: "upstream_error",
             status: upstreamRes.status,
           },
-        });
+        };
       }
+      log.warn("upstream rejected", {
+        model: model.id,
+        upstream: upstream.id,
+        status: upstreamRes.status,
+        error: errorMsg.slice(0, 100),
+      });
+      sendJson(res, upstreamRes.status, jsonPayload);
       return;
     }
 
@@ -308,6 +318,25 @@ async function handleAnthropic(
       body: JSON.stringify(chatBody),
       duplex: "half",
     });
+
+    if (upstreamRes.status >= 400) {
+      const text = await upstreamRes.text();
+      let errorMsg = text.slice(0, 256) || "upstream error";
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json?.error?.message ?? json?.message ?? errorMsg;
+      } catch {
+        // ignore
+      }
+      log.warn("upstream rejected", {
+        model: model.id,
+        upstream: upstream.id,
+        status: upstreamRes.status,
+        error: errorMsg.slice(0, 100),
+      });
+      sendAnthropicError(res, upstreamRes.status, errorMsg);
+      return;
+    }
 
     if (!parsed.value.stream) {
       const text = await upstreamRes.text();

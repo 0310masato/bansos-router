@@ -53,15 +53,13 @@
 |---|---|
 | Base URL | `https://api.llm7.io/v1` (OpenAI-compatible) |
 | Auth | **Anonymous** — send `api_key: "unused"`; optional free token from `dash.llm7.io` for higher limits |
-| Model source | `GET /v1/models` — **dynamic** (30+ models); stable free selectors: `default`, `fast` (pro is paid-only) |
-| Rate limit | Shared anonymous tier (tight, unspecified); free token raises limits |
-| Quirk | Not affiliated with the upstream model providers; models can appear/disappear — dynamic catalog + health-check are mandatory |
+| Model source | `GET /v1/models` — **dynamic** (filtered by `usage_based_only: false`); stable selectors: `default`, `fast` (pro is paid-only) |
+| Rate limit | Shared anonymous tier (1 request concurrency per IP); free token raises limits |
+| Quirk | Models can appear/disappear — dynamic catalog + health-check are mandatory |
 
-> LLM7 is the third fully keyless upstream. Unlike Zen/Kilo, its catalog is
-> **not pinned in code**: the runtime catalog snapshots whatever `/v1/models`
-> returns at health-check time (§4), with conservative defaults
-> (`reasoning: false`, `contextWindow: 128_000`, `maxTokens: 8_192`) unless
-> the live catalog says otherwise.
+> LLM7 models are dynamically snapshot via `GET /v1/models`. Only models with
+> `usage_based_only: false` (tier turbo) are registered as free models. The
+> pro tier models (paid per token) are automatically excluded.
 
 ### 2.4 Future (roadmap — out of v1 scope)
 
@@ -123,8 +121,9 @@ ids from the kilo API join at runtime):
 `poolside/laguna-xs-2.1:free`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`,
 `openrouter/free`
 
-**LLM7 (dynamic):** stable free selectors `default`, `fast` (pro is paid-only) + whatever
-`GET /v1/models` returns at health-check time.
+**LLM7 (8 seeded + dynamic refresh):** `DeepSeek-V4-Flash-0731`, `gemini-3.1-flash-lite`,
+`minimax-m2.7`, `gpt-oss:20b`, `mistral-Nemo-Instruct-2407`, `codestral-latest`,
+`default`, `fast`. Live models are filtered by `usage_based_only: false`.
 
 ## 4. Health checking
 

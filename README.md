@@ -105,6 +105,12 @@ are token counts.
 
 | model id | reasoning | context | max output |
 |---|---|---|---|
+| `DeepSeek-V4-Flash-0731` | yes | 400k | 131k |
+| `gemini-3.1-flash-lite` | no | 256k | 65k |
+| `minimax-m2.7` | yes | 180k | 32k |
+| `gpt-oss:20b` | no | 128k | 16k |
+| `mistral-Nemo-Instruct-2407` | no | 128k | 16k |
+| `codestral-latest` | no | 32k | 8k |
 | `default` | no | 128k | 8k |
 | `fast` | no | 128k | 8k |
 
@@ -114,8 +120,8 @@ Notes:
   catalog on a timer and drops models that are no longer offered free.
 - Zen's `/v1/models` lists *claude-\** ids that differ from the free coding
   models above, so the zen set is pinned to the seeded list.
-- LLM7 exposes no JSON model list; `default` and `fast` are stable free
-  selectors. `pro` is paid-only and excluded.
+- LLM7 models are filtered dynamically by `usage_based_only: false` (tier turbo);
+  `default` and `fast` are stable selectors. `pro` tier is paid-only and excluded.
 
 ## Development
 
