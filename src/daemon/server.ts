@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import { Readable, Transform } from "node:stream";
 import type { Logger } from "../logger";
+import type { ModelDef } from "../upstreams/types";
 import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";
 import {
   parseAnthropicRequest,
@@ -34,6 +35,9 @@ const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
 
   // whitelisted inbound paths only; traversal/encoded variants rejected
 const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
+
+// how many fallback models to try
+const MAX_FAILOVER_RETRIES = 2;
 
 function validatePath(rawUrl: string): boolean {
   const pathname = rawUrl.split("?")[0] ?? "/";
@@ -119,6 +123,31 @@ export function logUsageTransform(model: string, upstream: string, log: Logger, 
     },
   });
 }
+
+export function pickFailover(
+  catalog: RuntimeCatalog,
+  origin: ModelDef,
+  attempts: ReadonlySet<string> = new Set(),
+): ModelDef | undefined {
+  let best: ModelDef | undefined;
+  let bestScore = Number.POSITIVE_INFINITY; // lower is better
+  for (const candidate of catalog.models) {
+    if (candidate.id === origin.id) continue;
+    if (attempts.has(candidate.id)) continue;
+    if (candidate.source === origin.source) continue;
+    if (candidate.reasoning !== origin.reasoning) continue;
+    if (candidate.compat.supportsDeveloperRole !== origin.compat.supportsDeveloperRole) continue;
+    if (candidate.compat.supportsReasoningEffort !== origin.compat.supportsReasoningEffort) continue;
+    if (candidate.contextWindow < origin.contextWindow) continue;
+
+    const score = (candidate.contextWindow - origin.contextWindow) * 1_000_000 - candidate.maxTokens;
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+  return best;
+}
 async function handleChat(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -180,45 +209,87 @@ async function handleChat(
     body as Record<string, unknown>,
     model.compat.supportsDeveloperRole,
   );
-  const outboundBody = JSON.stringify(sanitizedBody);
 
-  try {
-    const relay = loadRelayState();
-    const upstreamRes = await relayFetch(relay, upstream.chatUrl, {
-      method: "POST",
-      headers,
-      body: outboundBody,
-      duplex: "half",
+  const relay = loadRelayState();
+  const tried = new Set<string>([model.id]);
+  let current: ModelDef = model;
+  let currentUpstream = catalog.upstreamBySource(current.source)!;  let transientError: { status: number; errorMsg: string } | null = null;
+
+  for (let attempt = 0; attempt <= MAX_FAILOVER_RETRIES; attempt++) {
+    if (current.id !== model.id || attempt > 0) {
+      log.warn("upstream rejected — fallback used", {
+        from: model.id,
+        to: current.id,
+        fromUpstream: currentUpstream.id,
+        status: transientError?.status,
+        durationMs: Date.now() - requestStartedAt,
+        attempt,
+        error: transientError?.errorMsg.slice(0, 100),
+      });
+    }
+
+    const headers = new Headers({
+      "content-type": "application/json",
+      ...currentUpstream.requestHeaders(current),
     });
+    const outboundBody = JSON.stringify({ ...sanitizedBody, model: current.id });
 
-    // non-2xx: buffer and return safe JSON error
-    // (upstream may return HTML — Cloudflare/nginx error pages)
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await relayFetch(relay, currentUpstream.chatUrl, {
+        method: "POST",
+        headers,
+        body: outboundBody,
+        duplex: "half",
+      });
+    } catch (err) {
+      // transport-level failure: try next fallback
+      transientError = { status: 0, errorMsg: String(err) };
+      const next = pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
+    }
+
     if (upstreamRes.status >= 400) {
       const text = await upstreamRes.text();
       let errorMsg = text.slice(0, 256) || "upstream error";
-      let jsonPayload: unknown;
       try {
         const json = JSON.parse(text);
-        jsonPayload = json;
         errorMsg = json?.error?.message ?? json?.message ?? errorMsg;
       } catch {
-        jsonPayload = {
+        // ignore parse failure; raw text stands as error message
+      }
+
+      const transient = upstreamRes.status === 429 || upstreamRes.status >= 500;
+      if (!transient) {
+        // client error from upstream; forward as-is, no fallback
+        log.warn("upstream rejected", {
+          model: current.id,
+          upstream: currentUpstream.id,
+          status: upstreamRes.status,
+          durationMs: Date.now() - requestStartedAt,
+          error: errorMsg.slice(0, 100),
+        });
+        sendJson(res, upstreamRes.status, {
           error: {
             message: errorMsg,
             type: "upstream_error",
             status: upstreamRes.status,
           },
-        };
+        });
+        return;
       }
-      log.warn("upstream rejected", {
-        model: model.id,
-        upstream: upstream.id,
-        status: upstreamRes.status,
-        durationMs: Date.now() - requestStartedAt,
-        error: errorMsg.slice(0, 100),
-      });
-      sendJson(res, upstreamRes.status, jsonPayload);
-      return;
+
+      transientError = { status: upstreamRes.status, errorMsg };
+      const next = pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
     }
 
     // 2xx: forward the response, capturing token usage on the way
@@ -230,7 +301,15 @@ async function handleChat(
       const text = await upstreamRes.text();
       try {
         const usage = extractUsage(JSON.parse(text));
-        if (usage) log.info("chat done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...usage });
+        if (usage) {
+          log.info("chat done", {
+            model: current.id,
+            upstream: currentUpstream.id,
+            durationMs: Date.now() - requestStartedAt,
+            failoverFrom: current.id !== model.id ? model.id : undefined,
+            ...usage,
+          });
+        }
       } catch {
         // usage is informational only; the plain response still goes out
       }
@@ -242,15 +321,31 @@ async function handleChat(
       Readable.fromWeb(
         upstreamRes.body as import("node:stream/web").ReadableStream,
       )
-        .pipe(logUsageTransform(model.id, upstream.id, log, requestStartedAt))
+        .pipe(logUsageTransform(current.id, currentUpstream.id, log, requestStartedAt))
         .pipe(res);
     } else {
       res.end();
     }
-  } catch (err) {
-    log.warn("upstream request failed", { error: String(err) });
-    sendJson(res, 502, { error: { message: "upstream request failed" } });
+    return;
   }
+
+  // fell out of the loop: every candidate rejected with 429/5xx
+  const final = transientError ?? { status: 502, errorMsg: "no upstream candidates left" };
+  log.warn("upstream rejected", {
+    model: model.id,
+    upstream: currentUpstream.id,
+    status: final.status || 502,
+    durationMs: Date.now() - requestStartedAt,
+    attempts: tried.size,
+    error: final.errorMsg.slice(0, 100),
+  });
+  sendJson(res, final.status || 502, {
+    error: {
+      message: final.errorMsg,
+      type: "upstream_error",
+      status: final.status || 502,
+    },
+  });
 }
 
 // anthropic messages in -> translate to openai chat -> forward -> translate back
@@ -302,10 +397,6 @@ async function handleAnthropic(
   if (typeof chatBody.max_tokens === "number" && chatBody.max_tokens > model.maxTokens) {
     chatBody.max_tokens = model.maxTokens;
   }
-  const headers = new Headers({
-    "content-type": "application/json",
-    ...upstream.requestHeaders(model),
-  });
 
   log.info("anthropic → upstream", {
     model: model.id,
@@ -313,14 +404,48 @@ async function handleAnthropic(
     stream: parsed.value.stream,
   });
 
-  try {
-    const relay = loadRelayState();
-    const upstreamRes = await relayFetch(relay, upstream.chatUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(chatBody),
-      duplex: "half",
+  const relay = loadRelayState();
+  const tried = new Set<string>([model.id]);
+  let current: ModelDef = model;
+  let currentUpstream = catalog.upstreamBySource(current.source)!;
+  let transientError: { status: number; errorMsg: string } | null = null;
+
+  for (let attempt = 0; attempt <= MAX_FAILOVER_RETRIES; attempt++) {
+    if (current.id !== model.id || attempt > 0) {
+      log.warn("upstream rejected — fallback used", {
+        from: model.id,
+        to: current.id,
+        fromUpstream: currentUpstream.id,
+        status: transientError?.status,
+        durationMs: Date.now() - requestStartedAt,
+        attempt,
+        error: transientError?.errorMsg.slice(0, 100),
+      });
+    }
+
+    const headers = new Headers({
+      "content-type": "application/json",
+      ...currentUpstream.requestHeaders(current),
     });
+    const outboundBody = JSON.stringify({ ...chatBody, model: current.id });
+
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await relayFetch(relay, currentUpstream.chatUrl, {
+        method: "POST",
+        headers,
+        body: outboundBody,
+        duplex: "half",
+      });
+    } catch (err) {
+      transientError = { status: 0, errorMsg: String(err) };
+      const next = pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
+    }
 
     if (upstreamRes.status >= 400) {
       const text = await upstreamRes.text();
@@ -331,15 +456,27 @@ async function handleAnthropic(
       } catch {
         // ignore
       }
-      log.warn("upstream rejected", {
-        model: model.id,
-        upstream: upstream.id,
-        status: upstreamRes.status,
-        durationMs: Date.now() - requestStartedAt,
-        error: errorMsg.slice(0, 100),
-      });
-      sendAnthropicError(res, upstreamRes.status, errorMsg);
-      return;
+
+      const transient = upstreamRes.status === 429 || upstreamRes.status >= 500;
+      if (!transient) {
+        log.warn("upstream rejected", {
+          model: current.id,
+          upstream: currentUpstream.id,
+          status: upstreamRes.status,
+          durationMs: Date.now() - requestStartedAt,
+          error: errorMsg.slice(0, 100),
+        });
+        sendAnthropicError(res, upstreamRes.status, errorMsg);
+        return;
+      }
+
+      transientError = { status: upstreamRes.status, errorMsg };
+      const next = pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
     }
 
     if (!parsed.value.stream) {
@@ -351,9 +488,17 @@ async function handleAnthropic(
         sendAnthropicError(res, 502, "invalid upstream response");
         return;
       }
-      const message = openAiCompletionToAnthropicMessage(json, model.id);
+      const message = openAiCompletionToAnthropicMessage(json, current.id);
       const usage = extractUsage(json);
-      if (usage) log.info("anthropic done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...usage });
+      if (usage) {
+        log.info("anthropic done", {
+          model: current.id,
+          upstream: currentUpstream.id,
+          durationMs: Date.now() - requestStartedAt,
+          failoverFrom: current.id !== model.id ? model.id : undefined,
+          ...usage,
+        });
+      }
       sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
       return;
     }
@@ -375,17 +520,33 @@ async function handleAnthropic(
         try { json = JSON.parse(frame.data); } catch { continue; }
         const usage = extractUsage(json);
         if (usage) streamUsage = usage;
-        for (const ev of encoder.push(json, model.id)) res.write(ev);
+        for (const ev of encoder.push(json, current.id)) res.write(ev);
       }
     }
     if (streamUsage) {
-      log.info("anthropic done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...streamUsage });
+      log.info("anthropic done", {
+        model: current.id,
+        upstream: currentUpstream.id,
+        durationMs: Date.now() - requestStartedAt,
+        failoverFrom: current.id !== model.id ? model.id : undefined,
+        ...streamUsage,
+      });
     }
     res.end();
-  } catch (err) {
-    log.warn("upstream request failed", { error: String(err) });
-    sendAnthropicError(res, 502, "upstream request failed");
+    return;
   }
+
+  // fell out of the loop: every candidate rejected with 429/5xx
+  const final = transientError ?? { status: 502, errorMsg: "no upstream candidates left" };
+  log.warn("upstream rejected", {
+    model: model.id,
+    upstream: currentUpstream.id,
+    status: final.status || 502,
+    durationMs: Date.now() - requestStartedAt,
+    attempts: tried.size,
+    error: final.errorMsg.slice(0, 100),
+  });
+  sendAnthropicError(res, final.status || 502, final.errorMsg);
 }
 
 function sendAnthropicError(
