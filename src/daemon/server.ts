@@ -97,6 +97,30 @@ export function extractUsage(json: unknown): TokenUsage | null {
   return { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens };
 }
 
+// finds the first complete `"usage": {...}` object in a tail of SSE bytes,
+// tolerating nested braces (e.g. completion_tokens_details).
+function findUsageObject(tail: string): Record<string, unknown> | null {
+  const open = tail.search(/"usage"\s*:\s*\{/);
+  if (open < 0) return null;
+  const start = tail.indexOf("{", open);
+  let depth = 0;
+  for (let i = start; i < tail.length; i++) {
+    const ch = tail[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(tail.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // pass-through that watches the tail of the SSE bytes for a usage object and
 // logs it once.
 export function logUsageTransform(model: string, upstream: string, log: Logger, startedAt: number): Transform {
@@ -106,16 +130,12 @@ export function logUsageTransform(model: string, upstream: string, log: Logger, 
     transform(chunk, _enc, cb) {
       tail = `${tail}${chunk.toString("utf8")}`.slice(-16384);
       if (!reported) {
-        const m = /"usage"\s*:\s*\{[^}]+\}/.exec(tail);
-        if (m) {
-          try {
-            const usage = extractUsage(JSON.parse(`{${m[0]}}`));
-            if (usage) {
-              reported = true;
-              log.info("chat done", { model, upstream, durationMs: Date.now() - startedAt, ...usage });
-            }
-          } catch {
-            // not a usable usage object, keep scanning
+        const obj = findUsageObject(tail);
+        if (obj) {
+          const usage = extractUsage({ usage: obj });
+          if (usage) {
+            reported = true;
+            log.info("chat done", { model, upstream, durationMs: Date.now() - startedAt, ...usage });
           }
         }
       }
@@ -208,7 +228,10 @@ async function handleChat(
   const sanitizedBody = sanitizeChatBody(
     body as Record<string, unknown>,
     model.compat.supportsDeveloperRole,
-  );
+  ) as Record<string, unknown>;
+  if (parsed.value.stream) {
+    sanitizedBody.stream_options = { include_usage: true };
+  }
 
   const relay = loadRelayState();
   const tried = new Set<string>([model.id]);
