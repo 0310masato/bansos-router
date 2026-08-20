@@ -95,7 +95,7 @@ export function extractUsage(json: unknown): TokenUsage | null {
 
 // pass-through that watches the tail of the SSE bytes for a usage object and
 // logs it once.
-export function logUsageTransform(model: string, upstream: string, log: Logger): Transform {
+export function logUsageTransform(model: string, upstream: string, log: Logger, startedAt: number): Transform {
   let tail = "";
   let reported = false;
   return new Transform({
@@ -108,7 +108,7 @@ export function logUsageTransform(model: string, upstream: string, log: Logger):
             const usage = extractUsage(JSON.parse(`{${m[0]}}`));
             if (usage) {
               reported = true;
-              log.info("chat done", { model, upstream, ...usage });
+              log.info("chat done", { model, upstream, durationMs: Date.now() - startedAt, ...usage });
             }
           } catch {
             // not a usable usage object, keep scanning
@@ -175,6 +175,7 @@ async function handleChat(
     stream: parsed.value.stream,
   });
 
+  const requestStartedAt = Date.now();
   const sanitizedBody = sanitizeChatBody(
     body as Record<string, unknown>,
     model.compat.supportsDeveloperRole,
@@ -213,6 +214,7 @@ async function handleChat(
         model: model.id,
         upstream: upstream.id,
         status: upstreamRes.status,
+        durationMs: Date.now() - requestStartedAt,
         error: errorMsg.slice(0, 100),
       });
       sendJson(res, upstreamRes.status, jsonPayload);
@@ -228,7 +230,7 @@ async function handleChat(
       const text = await upstreamRes.text();
       try {
         const usage = extractUsage(JSON.parse(text));
-        if (usage) log.info("chat done", { model: model.id, upstream: upstream.id, ...usage });
+        if (usage) log.info("chat done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...usage });
       } catch {
         // usage is informational only; the plain response still goes out
       }
@@ -240,7 +242,7 @@ async function handleChat(
       Readable.fromWeb(
         upstreamRes.body as import("node:stream/web").ReadableStream,
       )
-        .pipe(logUsageTransform(model.id, upstream.id, log))
+        .pipe(logUsageTransform(model.id, upstream.id, log, requestStartedAt))
         .pipe(res);
     } else {
       res.end();
@@ -292,6 +294,7 @@ async function handleAnthropic(
     return;
   }
 
+  const requestStartedAt = Date.now();
   const chatBody = parsed.value.chatBody as Record<string, unknown>;
   chatBody.model = model.id;
   // defensive cap: pin max_tokens to the model's actual limit so a stale
@@ -332,6 +335,7 @@ async function handleAnthropic(
         model: model.id,
         upstream: upstream.id,
         status: upstreamRes.status,
+        durationMs: Date.now() - requestStartedAt,
         error: errorMsg.slice(0, 100),
       });
       sendAnthropicError(res, upstreamRes.status, errorMsg);
@@ -349,7 +353,7 @@ async function handleAnthropic(
       }
       const message = openAiCompletionToAnthropicMessage(json, model.id);
       const usage = extractUsage(json);
-      if (usage) log.info("anthropic done", { model: model.id, upstream: upstream.id, ...usage });
+      if (usage) log.info("anthropic done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...usage });
       sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
       return;
     }
@@ -375,7 +379,7 @@ async function handleAnthropic(
       }
     }
     if (streamUsage) {
-      log.info("anthropic done", { model: model.id, upstream: upstream.id, ...streamUsage });
+      log.info("anthropic done", { model: model.id, upstream: upstream.id, durationMs: Date.now() - requestStartedAt, ...streamUsage });
     }
     res.end();
   } catch (err) {

@@ -44,8 +44,9 @@ test("logUsageTransform reports usage from the final streamed chunk and passes b
     },
   });
 
+  const startedAt = Date.now() - 100;
   await new Promise<void>((resolve, reject) => {
-    source.pipe(logUsageTransform("deepseek-v4-flash-free", "zen", log)).pipe(sink);
+    source.pipe(logUsageTransform("deepseek-v4-flash-free", "zen", log, startedAt)).pipe(sink);
     sink.on("error", reject);
     sink.on("finish", () => {
       try {
@@ -55,12 +56,14 @@ test("logUsageTransform reports usage from the final streamed chunk and passes b
         assert.equal(calls.length, 1, "usage logged exactly once");
         const call = calls[0]!;
         assert.equal(call.msg, "chat done");
-        assert.deepEqual(call.fields, {
-          model: "deepseek-v4-flash-free",
-          upstream: "zen",
-          inputTokens: 10,
-          outputTokens: 5,
-        });
+        assert.equal(call.fields.model, "deepseek-v4-flash-free");
+        assert.equal(call.fields.upstream, "zen");
+        assert.equal(call.fields.inputTokens, 10);
+        assert.equal(call.fields.outputTokens, 5);
+        assert.ok(
+          typeof call.fields.durationMs === "number" && call.fields.durationMs >= 100,
+          `durationMs >= 100 (got ${call.fields.durationMs})`,
+        );
         resolve();
       } catch (err) {
         reject(err);

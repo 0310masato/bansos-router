@@ -21,6 +21,20 @@
     **roadmap (M5)** — opt-in, chained at `127.0.0.1:<port>`; may carry a
     token; relay egress **off**.
 
+### 1.1 Dynamic catalog & hardcoded fallback
+
+Catalog bansos-router bersifat **live-first dengan pinned fallback**:
+
+- **Kilo & LLM7** secara periodik (default tiap 60 menit) memanggil
+  endpoint `/models` upstream dan menyaring model gratis:
+  - Kilo: filter `id` diakhiri `:free` ditambah ID dari pinned list.
+  - LLM7: filter `usage_based_only === false` atau `tier === "turbo"`.
+- Saat endpoint upstream gagal / timeout / mengembalikan array kosong,
+  daemon otomatis mempertahankan model hasil `seed()` (pinned hardcoded)
+  sehingga katalog tidak kosong.
+- **Zen tetap hardcoded** karena endpoint `/models` mereka hanya
+  mengembalikan id `claude-*` yang tidak relevan untuk catalog free.
+
 ## 2. Upstreams (v1)
 
 ### 2.1 OpenCode Zen
