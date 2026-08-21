@@ -36,8 +36,17 @@ const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
   // whitelisted inbound paths only; traversal/encoded variants rejected
 const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
 
-// how many fallback models to try
+// how many fallback models to try after the primary rejects with 429/5xx.
+// total attempts = 1 + MAX_FAILOVER_RETRIES.
 const MAX_FAILOVER_RETRIES = 2;
+
+// CORS headers applied to every response (not just preflight) so browser
+// clients (web UIs, extensions) can call the daemon after a passed preflight.
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+} as const;
 
 function validatePath(rawUrl: string): boolean {
   const pathname = rawUrl.split("?")[0] ?? "/";
@@ -63,6 +72,7 @@ function sendJson(
   res.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
+    ...CORS_HEADERS,
   });
   res.end(payload);
 }
@@ -317,7 +327,7 @@ async function handleChat(
 
     // 2xx: forward the response, capturing token usage on the way
     const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
-    res.writeHead(upstreamRes.status, { "content-type": contentType });
+    res.writeHead(upstreamRes.status, { "content-type": contentType, ...CORS_HEADERS });
 
     if (!parsed.value.stream) {
       // non-stream: buffer once to read usage, then forward the exact bytes
@@ -325,13 +335,14 @@ async function handleChat(
       try {
         const usage = extractUsage(JSON.parse(text));
         if (usage) {
-          log.info("chat done", {
+          const fields: Record<string, unknown> = {
             model: current.id,
             upstream: currentUpstream.id,
             durationMs: Date.now() - requestStartedAt,
-            failoverFrom: current.id !== model.id ? model.id : undefined,
             ...usage,
-          });
+          };
+          if (current.id !== model.id) fields.failoverFrom = model.id;
+          log.info("chat done", fields);
         }
       } catch {
         // usage is informational only; the plain response still goes out
@@ -514,13 +525,14 @@ async function handleAnthropic(
       const message = openAiCompletionToAnthropicMessage(json, current.id);
       const usage = extractUsage(json);
       if (usage) {
-        log.info("anthropic done", {
+        const fields: Record<string, unknown> = {
           model: current.id,
           upstream: currentUpstream.id,
           durationMs: Date.now() - requestStartedAt,
-          failoverFrom: current.id !== model.id ? model.id : undefined,
           ...usage,
-        });
+        };
+        if (current.id !== model.id) fields.failoverFrom = model.id;
+        log.info("anthropic done", fields);
       }
       sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
       return;
@@ -530,6 +542,7 @@ async function handleAnthropic(
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       "connection": "keep-alive",
+      ...CORS_HEADERS,
     });
     const encoder = new AnthropicStreamEncoder();
     let streamUsage: TokenUsage | null = null;
@@ -547,13 +560,14 @@ async function handleAnthropic(
       }
     }
     if (streamUsage) {
-      log.info("anthropic done", {
+      const fields: Record<string, unknown> = {
         model: current.id,
         upstream: currentUpstream.id,
         durationMs: Date.now() - requestStartedAt,
-        failoverFrom: current.id !== model.id ? model.id : undefined,
         ...streamUsage,
-      });
+      };
+      if (current.id !== model.id) fields.failoverFrom = model.id;
+      log.info("anthropic done", fields);
     }
     res.end();
     return;

@@ -67,13 +67,13 @@ test("opencode adapter populates all models by default or single model when spec
   // default: all models
   const allWrites = adapter.render({
     baseUrl: "http://127.0.0.1:17070/v1",
-    defaultModel: "deepseek-v4-flash-free",
+    defaultModel: "hy3-free",
     models: SEEDED_MODELS,
     specificModel: false,
   });
   const allParsed = JSON.parse(allWrites[0]!.content);
   assert.ok(Object.keys(allParsed.provider.bansos.models).length >= 10);
-  assert.ok(allParsed.provider.bansos.models["deepseek-v4-flash-free"]);
+  assert.ok(allParsed.provider.bansos.models["hy3-free"]);
   assert.ok(allParsed.provider.bansos.models["mimo-v2.5-free"]);
   assert.ok(allParsed.provider.bansos.models["kilo-auto/free"]);
 

@@ -235,6 +235,9 @@ export class AnthropicStreamEncoder {
   private textIndex: number | null = null;
   private textStarted = false;
   private textStopped = false;
+  private thinkingIndex: number | null = null;
+  private thinkingStarted = false;
+  private thinkingStopped = false;
   private toolBlocks = new Map<number, { index: number; id: string; name: string }>();
   private nextIndex = 0;
   private usage = { input_tokens: 0, output_tokens: 0 };
@@ -271,7 +274,35 @@ export class AnthropicStreamEncoder {
 
     const delta = choice.delta ?? {};
 
+    // translate upstream reasoning delta into an Anthropic thinking block
+    const reasoningText =
+      typeof delta.reasoning === "string" && delta.reasoning.length > 0
+        ? delta.reasoning
+        : typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0
+          ? delta.reasoning_content
+          : null;
+    if (reasoningText) {
+      if (this.thinkingIndex === null) {
+        this.thinkingIndex = this.nextIndex++;
+        this.thinkingStarted = true;
+        out.push(sseEvent("content_block_start", {
+          type: "content_block_start",
+          index: this.thinkingIndex,
+          content_block: { type: "thinking", thinking: "" },
+        }));
+      }
+      out.push(sseEvent("content_block_delta", {
+        type: "content_block_delta",
+        index: this.thinkingIndex,
+        delta: { type: "thinking_delta", thinking: reasoningText },
+      }));
+    }
+
     if (typeof delta.content === "string" && delta.content.length > 0) {
+      if (this.thinkingStarted && !this.thinkingStopped && this.thinkingIndex !== null) {
+        out.push(sseEvent("content_block_stop", { type: "content_block_stop", index: this.thinkingIndex }));
+        this.thinkingStopped = true;
+      }
       if (this.textIndex === null) {
         this.textIndex = this.nextIndex++;
         this.textStarted = true;
@@ -322,6 +353,10 @@ export class AnthropicStreamEncoder {
 
   close(): string[] {
     const out: string[] = [];
+    if (this.thinkingStarted && !this.thinkingStopped && this.thinkingIndex !== null) {
+      out.push(sseEvent("content_block_stop", { type: "content_block_stop", index: this.thinkingIndex }));
+      this.thinkingStopped = true;
+    }
     if (this.textStarted && !this.textStopped && this.textIndex !== null) {
       out.push(sseEvent("content_block_stop", { type: "content_block_stop", index: this.textIndex }));
       this.textStopped = true;

@@ -1,22 +1,36 @@
 import type { InternalTurn, ParseResult } from "./internal";
 
 // sanitize inbound messages based on model compatibility
-// (e.g. rewrite role "developer" to "system" when upstream does not support it)
+// (e.g. rewrite role "developer" to "system" when upstream does not support it,
+// and strip reasoning echoes from prior turns that upstreams reject on input)
 export function sanitizeChatBody(
   body: Record<string, unknown>,
   supportsDeveloperRole: boolean,
 ): Record<string, unknown> {
-  if (supportsDeveloperRole || !Array.isArray(body.messages)) {
+  if (!Array.isArray(body.messages)) {
     return body;
   }
 
   let modified = false;
   const messages = body.messages.map((m) => {
-    if (m && typeof m === "object" && (m as Record<string, unknown>).role === "developer") {
+    if (!m || typeof m !== "object") return m;
+    const msg = m as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...msg };
+    // upstreams (Zen/DeepSeek) reject reasoning echoes carried from prior
+    // assistant turns: "reasoning_content field is only supported in output"
+    if ("reasoning_content" in next) {
+      delete next.reasoning_content;
       modified = true;
-      return { ...m, role: "system" };
     }
-    return m;
+    if ("thought" in next) {
+      delete next.thought;
+      modified = true;
+    }
+    if (!supportsDeveloperRole && msg.role === "developer") {
+      next.role = "system";
+      modified = true;
+    }
+    return next;
   });
 
   return modified ? { ...body, messages } : body;
