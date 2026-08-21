@@ -76,14 +76,14 @@ All upstreams are text-only and keyless. By default, `bansos setup` automaticall
 registers all available free models into harnesses with explicit model lists (like
 OpenCode, Goose, OpenClaw, and Continue), using `tencent/hy3:free` as the primary default.
 Pass `--model <id>` if you wish to pin a specific single model. Context and max output
-are token counts. The live catalog is ~29 models and changes as upstreams rotate
+are token counts. The live catalog is ~33 models and changes as upstreams rotate
 free tiers; run `bansos models` or `bansos ping` to see what is alive right now.
 
 ### OpenCode Zen
 
 | model id | reasoning | context | max output |
 |---|---|---|---|
-| `deepseek-v4-flash-free` | yes | 1M | 131k |
+| `x-preview-f-free` | yes | 1M | 65k |
 | `mimo-v2.5-free` | no | 1M | 131k |
 | `nemotron-3-ultra-free` | yes | 1M | 65k |
 | `big-pickle` | yes | 200k | 32k |
@@ -108,6 +108,8 @@ free tiers; run `bansos models` or `bansos ping` to see what is alive right now.
 | `poolside/laguna-s-2.1:free` | yes | 262k | 32k |
 | `cohere/north-mini-code:free` | no | 256k | 64k |
 | `poolside/laguna-xs-2.1:free` | no | 262k | 32k |
+| `thinkingmachines/inkling:free` | no | 262k | 10k |
+| `thinkingmachines/inkling-small:free` | no | 262k | 10k |
 | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` | yes | 256k | 65k |
 | `openrouter/free` | no | 200k | 65k |
 
@@ -116,6 +118,7 @@ free tiers; run `bansos models` or `bansos ping` to see what is alive right now.
 | model id | reasoning | context | max output |
 |---|---|---|---|
 | `DeepSeek-V4-Flash-0731` | yes | 400k | 131k |
+| `meta-Llama-3.1-8B-Instruct-Turbo` | no | 128k | 16k |
 | `gemini-3.1-flash-lite` | no | 256k | 65k |
 | `minimax-m2.7` | yes | 180k | 32k |
 | `gpt-oss:20b` | no | 128k | 16k |
