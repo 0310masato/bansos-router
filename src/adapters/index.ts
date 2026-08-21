@@ -135,7 +135,6 @@ function codexAdapter(): HarnessAdapter {
     configPaths: ["~/.codex/config.toml", ".codex/config.toml"],
     render(ctx: SetupContext): ConfigWrite[] {
       const toml = [
-        `# ${START_MARKER}`,
         `model = "${ctx.defaultModel}"`,
         `model_provider = "bansos"`,
         "",
@@ -144,18 +143,19 @@ function codexAdapter(): HarnessAdapter {
         `base_url = "${ctx.baseUrl}"`,
         `env_key = "BANSOS_API_KEY"`,
         `wire_api = "responses"`,
-        `# ${END_MARKER}`,
       ];
       return [
         {
           path: "~/.codex/config.toml",
           content: `${toml.join("\n")}\n`,
-          ...tomlBlock(),
+          mode: "toml-block",
+          markers: [`# ${START_MARKER}`, `# ${END_MARKER}`],
+          tomlTable: "model_providers.bansos",
         },
       ];
     },
     undo(): string[] {
-      return ["~/.codex/config.toml"];
+      return ["~/.codex/config.toml", ".codex/config.toml"];
     },
   };
 }
@@ -305,28 +305,44 @@ function jcodeAdapter(): HarnessAdapter {
     id: "jcode",
     name: "JCode",
     wire: "chat",
-    configPaths: ["~/.jcode/config.toml"],
+    configPaths: ["~/.jcode/config.toml", "~/.config/jcode/openai-compatible.env"],
     render(ctx: SetupContext): ConfigWrite[] {
       const toml = [
-        `# ${START_MARKER}`,
-        `default_provider = "bansos"`,
+        `default_provider = "openai-compatible"`,
         `default_model = "${ctx.defaultModel}"`,
         "",
-        `[providers.bansos]`,
-        `type = "openai-compatible"`,
+        `[providers.openai-compatible]`,
+        `type = "open-ai-compatible"`,
         `base_url = "${ctx.baseUrl}"`,
+        `auth = "bearer"`,
+        `model_catalog = true`,
+        `context_window = 1000000`,
+      ];
+      const envLines = [
+        `# ${START_MARKER}`,
+        `JCODE_OPENAI_COMPAT_API_BASE=http://127.0.0.1:17070`,
+        `OPENAI_COMPAT_API_KEY=bansos`,
+        `JCODE_OPENAI_COMPAT_LOCAL_ENABLED=1`,
         `# ${END_MARKER}`,
       ];
       return [
         {
           path: "~/.jcode/config.toml",
           content: `${toml.join("\n")}\n`,
-          ...tomlBlock(),
+          mode: "toml-block",
+          markers: [`# ${START_MARKER}`, `# ${END_MARKER}`],
+          tomlTable: "providers.openai-compatible",
+        },
+        {
+          path: "~/.config/jcode/openai-compatible.env",
+          content: `${envLines.join("\n")}\n`,
+          mode: "overwrite-block",
+          markers: [`# ${START_MARKER}`, `# ${END_MARKER}`],
         },
       ];
     },
     undo(): string[] {
-      return ["~/.jcode/config.toml"];
+      return ["~/.jcode/config.toml", "~/.config/jcode/openai-compatible.env"];
     },
   };
 }

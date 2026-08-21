@@ -33,8 +33,8 @@ export interface ServerOptions {
 
 const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
 
-  // whitelisted inbound paths only; traversal/encoded variants rejected
-const ALLOWED_PATH_PATTERN = /^\/v1\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
+// whitelisted inbound paths only; traversal/encoded variants rejected
+const ALLOWED_PATH_PATTERN = /^(\/v1)?\/(chat\/completions|messages|responses|models)\/?$|^\/healthz\/?$|^\/bansos\/(status|refresh)\/?$/;
 
 // how many fallback models to try after the primary rejects with 429/5xx.
 // total attempts = 1 + MAX_FAILOVER_RETRIES.
@@ -630,10 +630,10 @@ export function createServer(opts: ServerOptions): http.Server {
       sendJson(res, 403, { error: { message: "forbidden" } });
       return;
     }
-    const url = rawUrl.split("?")[0] ?? "/";
+    const cleanUrl = rawUrl.split("?")[0] ?? "/";
+    const url = cleanUrl.replace(/\/+$/, "");
 
-
-    if (method === "GET" && (url === "/v1/models" || url === "/v1/models/")) {
+    if (method === "GET" && (url === "/v1/models" || url === "/models")) {
       sendJson(res, 200, {
         object: "list",
         data: catalog.models.map((m) => ({
@@ -643,7 +643,9 @@ export function createServer(opts: ServerOptions): http.Server {
           owned_by: "bansos",
           name: m.name,
           context_window: m.contextWindow,
+          context_length: m.contextWindow,
           max_tokens: m.maxTokens,
+          maxTokens: m.maxTokens,
           reasoning: m.reasoning,
         })),
       });
@@ -692,12 +694,12 @@ export function createServer(opts: ServerOptions): http.Server {
     }
 
 
-    if (method === "POST" && url === "/v1/chat/completions") {
+    if (method === "POST" && (url === "/v1/chat/completions" || url === "/chat/completions")) {
       void handleChat(req, res, catalog, log);
       return;
     }
 
-    if (method === "POST" && url === "/v1/messages") {
+    if (method === "POST" && (url === "/v1/messages" || url === "/messages")) {
       void handleAnthropic(req, res, catalog, log);
       return;
     }
@@ -710,7 +712,7 @@ export function createServer(opts: ServerOptions): http.Server {
         },
       });
 
-    if (url === "/v1/responses") notImplemented("POST /v1/responses");
+    if (url === "/v1/responses" || url === "/responses") notImplemented("POST /v1/responses");
     else sendJson(res, 404, { error: { message: "not found" } });
   });
 }

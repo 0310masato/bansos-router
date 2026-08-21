@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { ADAPTERS, findAdapter } from "../adapters";
 import type { HarnessAdapter, SetupContext } from "../adapters/types";
 import { loadConfig } from "../daemon/state";
@@ -7,6 +8,7 @@ import { modelDef, type ModelDef } from "../upstreams/types";
 import {
   applyBlockWrite,
   applyMergeWrite,
+  applyTomlBlockWrite,
   expandHome,
   parseJsonc,
   removeBlock,
@@ -43,12 +45,15 @@ Harnesses: ${ADAPTERS.map((a) => a.id).join(", ")}
 }
 
 function resolveTargetFile(adapter: HarnessAdapter, defaultPath: string): string {
+  const fullDefault = expandHome(defaultPath);
+  if (fs.existsSync(fullDefault)) return defaultPath;
+
   const found = adapter.configPaths
     .map(expandHome)
     .find((p) => fs.existsSync(p));
   if (found) {
     const matched = adapter.configPaths.find((cp) => expandHome(cp) === found);
-    if (matched) return matched;
+    if (matched && path.extname(matched) === path.extname(defaultPath)) return matched;
   }
   return defaultPath;
 }
@@ -100,6 +105,8 @@ function applyAdapter(adapter: HarnessAdapter, ctx: SetupContext): number {
         failed++;
         continue;
       }
+    } else if (write.mode === "toml-block") {
+      content = applyTomlBlockWrite(existing ?? "", write.content, write.markers!, write.tomlTable!);
     } else {
       content = applyBlockWrite(existing ?? "", write.content, write.markers!);
     }

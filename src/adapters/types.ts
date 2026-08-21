@@ -12,8 +12,11 @@ export interface ConfigWrite {
   path: string;
   content: string;
   // overwrite-block = wrapped in markers so --undo can remove it
-  mode: "merge" | "overwrite-block";
+  // toml-block = same markers, but table-aware (patches existing [table])
+  mode: "merge" | "overwrite-block" | "toml-block";
   markers?: [string, string];
+  // for toml-block: the table name the block defines (e.g. "providers.bansos")
+  tomlTable?: string;
 }
 
 export interface HarnessAdapter {

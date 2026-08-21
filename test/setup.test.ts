@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { findAdapter } from "../src/adapters";
-import { applyMergeWrite, expandHome, parseJsonc, removeKeys } from "../src/cli/write";
+import { applyMergeWrite, applyTomlBlockWrite, expandHome, parseJsonc, removeKeys } from "../src/cli/write";
 import { SEEDED_MODELS } from "../src/upstreams";
 
 test("expandHome uses os.homedir cross-platform", () => {
@@ -228,4 +228,68 @@ test("cline and roo adapters render valid openai-compatible configs and support 
     assert.equal(parsedMerged.apiProvider, undefined);
     assert.equal(parsedMerged.openAiBaseUrl, undefined);
   }
+});
+
+test("jcode toml-block patches existing [providers.openai-compatible] without duplicating tables", () => {
+  const existing = [
+    "[keybindings]",
+    'scroll_up = "ctrl+shift+k"',
+    "",
+    "[providers.openai-compatible]",
+    'type = "open-ai-compatible"',
+    'base_url = "http://127.0.0.1:9999/v1"',
+    'auth = "bearer"',
+    "model_catalog = false",
+    "allow_provider_pinning = false",
+    "",
+    "[agents]",
+    'swarm_spawn_mode = "inline"',
+  ].join("\n");
+
+  const adapter = findAdapter("jcode")!;
+  const write = adapter.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "tencent/hy3:free",
+    models: SEEDED_MODELS,
+    specificModel: true,
+  })[0]!;
+
+  const out = applyTomlBlockWrite(existing, write.content, write.markers!, write.tomlTable!);
+
+  // no duplicate table headers
+  const headers = out.split("\n").filter((l) => l.trim() === "[providers.openai-compatible]");
+  assert.equal(headers.length, 1);
+
+  // root keys landed in root scope (before any section header)
+  const firstSection = out.split("\n").findIndex((l) => /^\s*\[/.test(l));
+  const before = out.split("\n").slice(0, firstSection).join("\n");
+  assert.match(before, /default_provider = "openai-compatible"/);
+  assert.match(before, /default_model = "tencent\/hy3:free"/);
+
+  // patched values inside the existing section
+  assert.match(out, /base_url = "http:\/\/127\.0\.0\.1:17070\/v1"/);
+  assert.match(out, /model_catalog = true/);
+  assert.doesNotMatch(out, /model_catalog = false/);
+
+  // untouched neighbours survive
+  assert.match(out, /\[keybindings\]/);
+  assert.match(out, /\[agents\]/);
+  assert.match(out, /swarm_spawn_mode = "inline"/);
+  assert.match(out, /allow_provider_pinning = false/);
+});
+
+test("jcode toml-block on fresh file keeps root keys at top and single table", () => {
+  const adapter = findAdapter("jcode")!;
+  const write = adapter.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "tencent/hy3:free",
+    models: SEEDED_MODELS,
+    specificModel: true,
+  })[0]!;
+
+  const out = applyTomlBlockWrite("", write.content, write.markers!, write.tomlTable!);
+  assert.equal(out.split("\n").filter((l) => l.trim() === "[providers.openai-compatible]").length, 1);
+  const idxRoot = out.indexOf('default_provider = "openai-compatible"');
+  const idxTable = out.indexOf("[providers.openai-compatible]");
+  assert.ok(idxRoot !== -1 && idxTable !== -1 && idxRoot < idxTable);
 });

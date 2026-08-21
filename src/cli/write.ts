@@ -95,6 +95,84 @@ export function applyBlockWrite(
   return base ? `${base}\n\n${block}` : block;
 }
 
+// toml-aware block write. unlike applyBlockWrite, it (a) inserts the block
+// BEFORE the first [table] header so bare root keys keep root scope, and
+// (b) when the target table already exists in the file, patches its keys
+// in place instead of appending a duplicate table (invalid TOML).
+export function applyTomlBlockWrite(
+  existing: string,
+  content: string,
+  markers: [string, string],
+  tableName: string,
+): string {
+  // work on the file without our old marked block
+  const stripped = removeBlock(existing, markers).replace(/\s+$/, "");
+  const lines = stripped.split("\n");
+
+  const headerRe = new RegExp(`^\\[${tableName.replace(/\./g, "\\.")}\\]\\s*$`);
+  const headerIdx = lines.findIndex((l) => headerRe.test(l.trim()));
+
+  // split our block content into root keys and table body
+  const contentLines = content.split("\n");
+  const tblIdx = contentLines.findIndex((l) => /^\[/.test(l.trim()));
+  const rootKeys = tblIdx === -1 ? contentLines : contentLines.slice(0, tblIdx);
+  const tableBody = tblIdx === -1 ? [] : contentLines.slice(tblIdx + 1);
+
+  if (headerIdx === -1) {
+    // no existing table: place root keys before the first section header so
+    // they stay in root scope, then the marked table block after everything
+    const block = markerBlock(content, markers);
+    const firstSection = lines.findIndex((l) => /^\s*\[/.test(l));
+    if (firstSection === -1) {
+      const base = stripped;
+      return base ? `${base}\n\n${block}` : block;
+    }
+    const rootText = rootKeys.join("\n").replace(/\s+$/, "");
+    const head = lines.slice(0, firstSection).join("\n").replace(/\s+$/, "");
+    const tail = lines.slice(firstSection).join("\n");
+    return `${[head, rootText].filter((s) => s !== "").join("\n\n")}\n\n${tail}\n\n${block}`;
+  }
+
+  // table exists: patch keys in place, keep everything else untouched
+  let sectionEnd = lines.length;
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    if (/^\s*\[/.test(lines[i]!)) {
+      sectionEnd = i;
+      break;
+    }
+  }
+  for (const line of tableBody) {
+    if (!line.trim() || /^#/.test(line.trim())) continue;
+    const key = line.split("=", 1)[0]!.trim();
+    const keyRe = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`);
+    let replaced = false;
+    for (let i = headerIdx + 1; i < sectionEnd; i++) {
+      if (keyRe.test(lines[i]!)) {
+        lines[i] = line;
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) {
+      lines.splice(sectionEnd, 0, line);
+      sectionEnd++;
+    }
+  }
+  // ensure root defaults exist (insert before first section header)
+  const rootText = rootKeys.join("\n").replace(/\s+$/, "");
+  if (rootText) {
+    const missing = rootKeys.filter((l) => {
+      const key = l.split("=", 1)[0]?.trim();
+      return key && !new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=`).test(stripped);
+    });
+    if (missing.length > 0) {
+      const firstSection = lines.findIndex((l) => /^\s*\[/.test(l));
+      lines.splice(firstSection === -1 ? lines.length : firstSection, 0, ...missing);
+    }
+  }
+  return `${lines.join("\n").replace(/\s+$/, "")}\n`;
+}
+
 // remove the marked block (markers inclusive)
 export function removeBlock(
   existing: string,
