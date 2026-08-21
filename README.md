@@ -64,6 +64,11 @@ separate extension. `codex` writes its config too, but its `wire_api =
 - The catalog is health-checked: live `:free` models replace stale seeds on a
   timer. Relay egress can route around rate limits (bring your own relay URL,
   auto-deploy lands in M4), and there is a per-IP rate limiter.
+- If a model is rejected with `429`/`5xx`, the daemon auto-fails over to the
+  closest equivalent model on a different upstream (same reasoning level,
+  context window, and effort capability), retrying up to two extra candidates
+  before surfacing an error. Request duration (`durationMs`) is logged on every
+  completion and rejection.
 
 ## Available models
 
@@ -71,7 +76,8 @@ All upstreams are text-only and keyless. By default, `bansos setup` automaticall
 registers all available free models into harnesses with explicit model lists (like
 OpenCode, Goose, and OpenClaw), using `deepseek-v4-flash-free` as the primary default.
 Pass `--model <id>` if you wish to pin a specific single model. Context and max output
-are token counts.
+are token counts. The live catalog is ~29 models and changes as upstreams rotate
+free tiers; run `bansos models` or `bansos ping` to see what is alive right now.
 
 ### OpenCode Zen
 
@@ -84,6 +90,7 @@ are token counts.
 | `laguna-s-2.1-free` | yes | 262k | 32k |
 | `hy3-free` | yes | 256k | 65k |
 | `nemotron-3.5-lightning-free` | yes | 1M | 65k |
+| `muse-spark-1.2-contributor-free` | no | 1M | 65k |
 
 ### KiloCode gateway
 
@@ -96,6 +103,7 @@ are token counts.
 | `nvidia/nemotron-3.5-lightning:free` | yes | 1M | 65k |
 | `nvidia/nemotron-3.5-content-safety:free` | yes | 128k | 8k |
 | `tencent/hy3:free` | yes | 262k | 128k |
+| `liquid/lfm-2.5-2.6b:free` | no | 128k | 8k |
 | `dots-studio/dots-3-note-preview:free` | no | 128k | 8k |
 | `poolside/laguna-s-2.1:free` | yes | 262k | 32k |
 | `cohere/north-mini-code:free` | no | 256k | 64k |

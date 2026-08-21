@@ -82,6 +82,16 @@ export const ZEN_MODELS: ModelDef[] = [
     input: ["text"],
     compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
   }),
+  modelDef({
+    id: "muse-spark-1.2-contributor-free",
+    name: "Muse Spark 1.2 Contributor Free (Zen)",
+    source: "zen",
+    reasoning: false,
+    contextWindow: 1_000_000,
+    maxTokens: 65_536,
+    input: ["text"],
+    compat: { supportsReasoningEffort: false, supportsDeveloperRole: false },
+  }),
 ];
 
 export const zenUpstream: Upstream = {
