@@ -13,16 +13,6 @@ const ZEN_STATIC_HEADERS = {
 // pinned free models (carried over from pi-bansos)
 export const ZEN_MODELS: ModelDef[] = [
   modelDef({
-    id: "deepseek-v4-flash-free",
-    name: "DeepSeek V4 Flash",
-    source: "zen",
-    reasoning: true,
-    contextWindow: 1_000_000,
-    maxTokens: 131_072,
-    input: ["text"],
-    compat: { supportsReasoningEffort: true, supportsDeveloperRole: false },
-  }),
-  modelDef({
     id: "mimo-v2.5-free",
     name: "Mimo V2.5 Free",
     source: "zen",
