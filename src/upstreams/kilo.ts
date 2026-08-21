@@ -7,7 +7,7 @@ export const KILO_CATALOG_URL = "https://api.kilo.ai/api/gateway/models";
 export const KILO_MODELS: ModelDef[] = [
   modelDef({
     id: "kilo-auto/free",
-    name: "Kilo Auto Free",
+    name: "Kilo Auto Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 256_000,
@@ -17,7 +17,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "stepfun/step-3.7-flash:free",
-    name: "Step 3.7 Flash Free",
+    name: "Step 3.7 Flash Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 262_144,
@@ -27,7 +27,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "nvidia/nemotron-3-ultra-550b-a55b:free",
-    name: "Nemotron 3 Ultra Free",
+    name: "Nemotron 3 Ultra Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 1_000_000,
@@ -37,7 +37,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "nvidia/nemotron-3-super-120b-a12b:free",
-    name: "Nemotron 3 Super Free",
+    name: "Nemotron 3 Super Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 262_144,
@@ -51,7 +51,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "nvidia/nemotron-3.5-lightning:free",
-    name: "Nemotron 3.5 Lightning Free",
+    name: "Nemotron 3.5 Lightning Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 1_000_000,
@@ -61,7 +61,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "nvidia/nemotron-3.5-content-safety:free",
-    name: "Nemotron 3.5 Content Safety Free",
+    name: "Nemotron 3.5 Content Safety Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 128_000,
@@ -71,7 +71,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "tencent/hy3:free",
-    name: "Tencent Hy3 Free",
+    name: "Tencent HY3 Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 262_144,
@@ -81,7 +81,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "liquid/lfm-2.5-2.6b:free",
-    name: "Liquid LFM 2.5 2.6B Free",
+    name: "Liquid LFM 2.5 2.6B Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 128_000,
@@ -91,7 +91,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "poolside/laguna-s-2.1:free",
-    name: "Laguna S 2.1 Free",
+    name: "Laguna S 2.1 Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 262_144,
@@ -101,7 +101,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "cohere/north-mini-code:free",
-    name: "North Mini Code Free",
+    name: "North Mini Code Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 256_000,
@@ -111,7 +111,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "poolside/laguna-xs-2.1:free",
-    name: "Laguna XS 2.1 Free",
+    name: "Laguna XS 2.1 Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 262_144,
@@ -121,7 +121,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-    name: "Nemotron 3 Nano Omni Free",
+    name: "Nemotron 3 Nano Omni Free (Kilo)",
     source: "kilo",
     reasoning: true,
     contextWindow: 256_000,
@@ -131,7 +131,7 @@ export const KILO_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "openrouter/free",
-    name: "OpenRouter Free (auto)",
+    name: "OpenRouter Free (Kilo)",
     source: "kilo",
     reasoning: false,
     contextWindow: 200_000,
@@ -164,7 +164,7 @@ export const kiloUpstream: Upstream = {
         if (known) return known;
         return modelDef({
           id: m.id,
-          name: m.name ?? m.id,
+          name: m.name ? `${m.name} (Kilo)` : `${m.id} (Kilo)`,
           source: "kilo",
           reasoning: false,
           contextWindow: m.context_length ?? 200_000,

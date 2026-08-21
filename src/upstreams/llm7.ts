@@ -18,7 +18,7 @@ export const LLM7_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "codestral-latest",
-    name: "Codestral Latest",
+    name: "Codestral Latest (LLM7)",
     source: "llm7",
     reasoning: false,
     contextWindow: 32_000,
@@ -38,7 +38,7 @@ export const LLM7_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "gpt-oss:20b",
-    name: "GPT OSS 20B",
+    name: "GPT OSS 20B (LLM7)",
     source: "llm7",
     reasoning: false,
     contextWindow: 128_000,
@@ -48,7 +48,7 @@ export const LLM7_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "minimax-m2.7",
-    name: "MiniMax M2.7",
+    name: "MiniMax M2.7 (LLM7)",
     source: "llm7",
     reasoning: true,
     contextWindow: 180_000,
@@ -58,7 +58,7 @@ export const LLM7_MODELS: ModelDef[] = [
   }),
   modelDef({
     id: "mistral-Nemo-Instruct-2407",
-    name: "Mistral Nemo Instruct",
+    name: "Mistral Nemo Instruct (LLM7)",
     source: "llm7",
     reasoning: false,
     contextWindow: 128_000,
