@@ -14,9 +14,9 @@ test("isNewerVersion compares semver versions correctly", () => {
 });
 
 test("checkUpdate returns UpdateInfo structure without throwing", async () => {
-  const res = await checkUpdate("bansos-router", "0.1.6");
+  const res = await checkUpdate("bansos-router", "0.1.7");
   assert.equal(typeof res.hasUpdate, "boolean");
   assert.equal(typeof res.current, "string");
   assert.equal(typeof res.latest, "string");
-  assert.equal(res.current, "0.1.6");
+  assert.equal(res.current, "0.1.7");
 });
