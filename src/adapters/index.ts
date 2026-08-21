@@ -379,6 +379,118 @@ function nineRouterAdapter(): HarnessAdapter {
   };
 }
 
+function continueAdapter(): HarnessAdapter {
+  return {
+    id: "continue",
+    name: "Continue (VS Code / JetBrains)",
+    wire: "chat",
+    configPaths: ["~/.continue/config.json", ".continue/config.json"],
+    render(ctx: SetupContext): ConfigWrite[] {
+      const list = ctx.specificModel
+        ? [{ id: ctx.defaultModel, name: ctx.defaultModel }]
+        : ctx.models.length > 0
+          ? ctx.models
+          : [{ id: ctx.defaultModel, name: ctx.defaultModel }];
+      const models = list.map((m) => ({
+        title: `Bansos - ${m.name ?? m.id}`,
+        provider: "openai",
+        model: m.id,
+        apiBase: ctx.baseUrl,
+        apiKey: "bansos",
+      }));
+      return [
+        {
+          path: "~/.continue/config.json",
+          content: `${JSON.stringify({ models }, null, 2)}\n`,
+          mode: "merge",
+        },
+      ];
+    },
+    undo(ctx?: SetupContext): string[] {
+      return ["~/.continue/config.json", ".continue/config.json"];
+    },
+    undoKeys: [
+      "models.Bansos",
+    ],
+  };
+}
+
+function clineAdapter(): HarnessAdapter {
+  return {
+    id: "cline",
+    name: "Cline (VS Code)",
+    wire: "chat",
+    configPaths: ["~/.config/cline/config.json", "~/.cline/config.json"],
+    render(ctx: SetupContext): ConfigWrite[] {
+      const cfg = {
+        apiProvider: "openai-compatible",
+        openAiBaseUrl: ctx.baseUrl,
+        openAiApiKey: "bansos",
+        openAiModelId: ctx.defaultModel,
+        openAiCustomModelInfo: {
+          contextWindow: 262144,
+          maxTokens: 65536,
+        },
+      };
+      return [
+        {
+          path: "~/.config/cline/config.json",
+          content: `${JSON.stringify(cfg, null, 2)}\n`,
+          mode: "merge",
+        },
+      ];
+    },
+    undo(): string[] {
+      return ["~/.config/cline/config.json", "~/.cline/config.json"];
+    },
+    undoKeys: [
+      "apiProvider",
+      "openAiBaseUrl",
+      "openAiApiKey",
+      "openAiModelId",
+      "openAiCustomModelInfo",
+    ],
+  };
+}
+
+function rooAdapter(): HarnessAdapter {
+  return {
+    id: "roo",
+    name: "Roo Code (VS Code)",
+    wire: "chat",
+    configPaths: ["~/.config/roo-cline/config.json", "~/.roo-cline/config.json"],
+    render(ctx: SetupContext): ConfigWrite[] {
+      const cfg = {
+        apiProvider: "openai-compatible",
+        openAiBaseUrl: ctx.baseUrl,
+        openAiApiKey: "bansos",
+        openAiModelId: ctx.defaultModel,
+        openAiCustomModelInfo: {
+          contextWindow: 262144,
+          maxTokens: 65536,
+        },
+      };
+      return [
+        {
+          path: "~/.config/roo-cline/config.json",
+          content: `${JSON.stringify(cfg, null, 2)}\n`,
+          mode: "merge",
+        },
+      ];
+    },
+    undo(): string[] {
+      return ["~/.config/roo-cline/config.json", "~/.roo-cline/config.json"];
+    },
+    undoKeys: [
+      "apiProvider",
+      "openAiBaseUrl",
+      "openAiApiKey",
+      "openAiModelId",
+      "openAiCustomModelInfo",
+    ],
+  };
+}
+
 export const ADAPTERS: HarnessAdapter[] = [
   claudeCodeAdapter(),
   aiderAdapter(),
@@ -390,6 +502,9 @@ export const ADAPTERS: HarnessAdapter[] = [
   antigravityAdapter(),
   jcodeAdapter(),
   nineRouterAdapter(),
+  continueAdapter(),
+  clineAdapter(),
+  rooAdapter(),
 ];
 
 export function findAdapter(id: string): HarnessAdapter | undefined {

@@ -168,3 +168,64 @@ test("9router merge and undo preserve other providers in db.json", () => {
   assert.equal(parsedMerged.providerConnections.length, 1);
   assert.equal(parsedMerged.providerConnections[0].id, "kiro-1");
 });
+
+test("continue adapter populates models array and supports merge", () => {
+  const adapter = findAdapter("continue")!;
+  assert.ok(adapter);
+  assert.equal(adapter.id, "continue");
+
+  const existingConfig = JSON.stringify({
+    models: [
+      { title: "Existing Ollama", provider: "ollama", model: "llama3" },
+    ],
+  });
+
+  const writes = adapter.render({
+    baseUrl: "http://127.0.0.1:17070/v1",
+    defaultModel: "tencent/hy3:free",
+    models: SEEDED_MODELS,
+    specificModel: false,
+  });
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]!.mode, "merge");
+
+  const merged = applyMergeWrite(existingConfig, writes[0]!.content);
+  const parsed = JSON.parse(merged);
+  assert.ok(parsed.models.length > 1);
+  assert.equal(parsed.models[0].title, "Existing Ollama");
+  assert.ok(parsed.models.some((m: any) => m.provider === "openai" && m.apiBase === "http://127.0.0.1:17070/v1"));
+});
+
+test("cline and roo adapters render valid openai-compatible configs and support merge", () => {
+  for (const id of ["cline", "roo"]) {
+    const adapter = findAdapter(id)!;
+    assert.ok(adapter, `findAdapter("${id}")`);
+
+    const writes = adapter.render({
+      baseUrl: "http://127.0.0.1:17070/v1",
+      defaultModel: "tencent/hy3:free",
+      models: SEEDED_MODELS,
+      specificModel: true,
+    });
+
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0]!.mode, "merge");
+
+    const parsed = JSON.parse(writes[0]!.content);
+    assert.equal(parsed.apiProvider, "openai-compatible");
+    assert.equal(parsed.openAiBaseUrl, "http://127.0.0.1:17070/v1");
+    assert.equal(parsed.openAiApiKey, "bansos");
+    assert.equal(parsed.openAiModelId, "tencent/hy3:free");
+
+    const merged = applyMergeWrite(JSON.stringify({ customSetting: true }), writes[0]!.content);
+    const parsedMerged = JSON.parse(merged);
+    assert.equal(parsedMerged.customSetting, true);
+    assert.equal(parsedMerged.apiProvider, "openai-compatible");
+
+    removeKeys(parsedMerged, adapter.undoKeys!);
+    assert.equal(parsedMerged.customSetting, true);
+    assert.equal(parsedMerged.apiProvider, undefined);
+    assert.equal(parsedMerged.openAiBaseUrl, undefined);
+  }
+});

@@ -109,6 +109,16 @@ export function removeBlock(
   return `${[head, tail].filter((s) => s !== "").join("\n\n")}\n`;
 }
 
+function getItemKey(item: unknown): string | undefined {
+  if (item && typeof item === "object") {
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.id === "string") return rec.id;
+    if (typeof rec.title === "string") return rec.title;
+    if (typeof rec.model === "string") return rec.model;
+  }
+  return undefined;
+}
+
 function deepMerge(target: Record<string, unknown>, patch: Record<string, unknown>): void {
   for (const [k, v] of Object.entries(patch)) {
     if (
@@ -119,10 +129,9 @@ function deepMerge(target: Record<string, unknown>, patch: Record<string, unknow
     } else if (Array.isArray(v) && Array.isArray(target[k])) {
       const targetArr = target[k] as unknown[];
       for (const item of v) {
-        if (item && typeof item === "object" && "id" in item) {
-          const idx = targetArr.findIndex(
-            (t) => t && typeof t === "object" && (t as Record<string, unknown>).id === (item as Record<string, unknown>).id,
-          );
+        const itemKey = getItemKey(item);
+        if (itemKey !== undefined) {
+          const idx = targetArr.findIndex((t) => getItemKey(t) === itemKey);
           if (idx >= 0) {
             targetArr[idx] = item;
           } else {
@@ -159,7 +168,7 @@ export function removeKeys(obj: Record<string, unknown>, keys: string[]): void {
     if (cur && typeof cur === "object") {
       const last = parts[parts.length - 1]!;
       if (Array.isArray(cur)) {
-        const idx = cur.findIndex((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === last);
+        const idx = cur.findIndex((item) => getItemKey(item) === last);
         if (idx >= 0) cur.splice(idx, 1);
       } else {
         delete (cur as Record<string, unknown>)[last];

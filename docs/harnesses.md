@@ -34,8 +34,9 @@ Legend: 🟢 config-only · 🟢* config-only but needs M3 wire (not live yet) �
 | **Antigravity CLI** | OpenAI Chat | `~/.config/antigravity/config.toml` | 🟢 | `base_url`, `model`, `api_key_env` (or inline) |
 | **JCode** | OpenAI Chat | `~/.jcode/config.toml` | 🟢 | `[providers.bansos] type="openai-compatible"`, `base_url` |
 | **9Router** | OpenAI Chat | `~/.9router/db.json` | 🟢 | Custom compatible `providerNodes` + `providerConnections` |
-| **Cline** | OpenAI Chat | `cline_mcp_settings` / settings UI | 🔵 | OpenAI-compatible base URL; works manually, no `bansos setup` adapter yet |
-| **Continue** | OpenAI Chat | `~/.continue/config.json` | 🔵 | OpenAI-compatible provider; works manually, no `bansos setup` adapter yet |
+| **Continue** | OpenAI Chat | `~/.continue/config.json` | 🟢 | Appends/merges OpenAI provider entries in `models` array |
+| **Cline** | OpenAI Chat | `~/.config/cline/config.json` | 🟢 | Sets `apiProvider: "openai-compatible"`, `openAiBaseUrl` |
+| **Roo Code** | OpenAI Chat | `~/.config/roo-cline/config.json` | 🟢 | Sets `apiProvider: "openai-compatible"`, `openAiBaseUrl` |
 | **Claude Desktop** | Anthropic Messages | — | 🔴 | No supported custom base URL; out of scope (hacky MITM only) |
 | **Copilot CLI** | — | — | 🔴 | OAuth-only, no custom endpoint |
 | **Gemini CLI** | — | — | 🔴 | Retired (June 2026) → Antigravity CLI |

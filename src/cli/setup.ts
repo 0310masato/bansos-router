@@ -14,7 +14,7 @@ import {
   writeConfig,
 } from "./write";
 
-const DEFAULT_MODEL = "deepseek-v4-flash-free";
+const DEFAULT_MODEL = "tencent/hy3:free";
 
 interface SetupArgs {
   harnesses: string[];

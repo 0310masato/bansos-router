@@ -44,9 +44,9 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 | `bansosd` | Alias for the daemon (e.g. `bansosd --bg`) |
 
 Supported harnesses for `bansos setup`: `claude-code`, `aider`, `opencode`,
-`hermes`, `goose`, `openclaw`, `antigravity`, `jcode`, `9router`. pi is handled by the
-separate extension. `codex` writes its config too, but its `wire_api =
-"responses"` needs M3. See the roadmap.
+`hermes`, `goose`, `openclaw`, `antigravity`, `jcode`, `9router`, `continue`, `cline`, `roo`.
+pi is handled by the separate extension. `codex` writes its config too, but its
+`wire_api = "responses"` needs M3. See the roadmap.
 
 ## What it does
 
@@ -74,7 +74,7 @@ separate extension. `codex` writes its config too, but its `wire_api =
 
 All upstreams are text-only and keyless. By default, `bansos setup` automatically
 registers all available free models into harnesses with explicit model lists (like
-OpenCode, Goose, and OpenClaw), using `deepseek-v4-flash-free` as the primary default.
+OpenCode, Goose, OpenClaw, and Continue), using `tencent/hy3:free` as the primary default.
 Pass `--model <id>` if you wish to pin a specific single model. Context and max output
 are token counts. The live catalog is ~29 models and changes as upstreams rotate
 free tiers; run `bansos models` or `bansos ping` to see what is alive right now.

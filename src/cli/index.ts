@@ -27,7 +27,8 @@ Usage:
   bansos --version                             print version
 
 Harnesses: claude-code, aider, opencode, codex, hermes, goose,
-           openclaw, antigravity, jcode, 9router   (pi via the separate extension)
+           openclaw, antigravity, jcode, 9router, continue, cline, roo
+           (pi via the separate extension)
 
 "bansosd" still works as an alias for the daemon (e.g. "bansosd --bg").
 `);
