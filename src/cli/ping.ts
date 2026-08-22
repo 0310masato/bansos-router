@@ -16,10 +16,12 @@ async function pingModel(base: string, modelId: string): Promise<PingResult> {
       headers: {
         "content-type": "application/json",
         authorization: "Bearer bansos",
+        // probe the model itself: daemon skips failover for this request
+        "x-bansos-no-failover": "1",
       },
       body: JSON.stringify({
         model: modelId,
-        max_tokens: 1,
+        max_tokens: 16,
         messages: [{ role: "user", content: "ping" }],
       }),
       signal: AbortSignal.timeout(12000),

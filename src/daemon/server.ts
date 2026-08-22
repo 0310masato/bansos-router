@@ -132,7 +132,7 @@ function findUsageObject(tail: string): Record<string, unknown> | null {
 }
 
 // pass-through that watches the tail of the SSE bytes for a usage object and
-// logs it once.
+// logs it once, ensuring a terminating `data: [DONE]` frame is emitted if missing.
 export function logUsageTransform(model: string, upstream: string, log: Logger, startedAt: number): Transform {
   let tail = "";
   let reported = false;
@@ -150,6 +150,13 @@ export function logUsageTransform(model: string, upstream: string, log: Logger, 
         }
       }
       cb(null, chunk);
+    },
+    flush(cb) {
+      // guarantee terminating [DONE] frame so clients with strict SSE parsers never hang/retry
+      if (!tail.includes("[DONE]")) {
+        this.push("\ndata: [DONE]\n\n");
+      }
+      cb();
     },
   });
 }
@@ -244,6 +251,8 @@ async function handleChat(
   }
 
   const relay = loadRelayState();
+  // ping probe sets this header: report the model's own status, no fallback
+  const noFailover = req.headers["x-bansos-no-failover"] === "1";
   const tried = new Set<string>([model.id]);
   let current: ModelDef = model;
   let currentUpstream = catalog.upstreamBySource(current.source)!;  let transientError: { status: number; errorMsg: string } | null = null;
@@ -278,7 +287,7 @@ async function handleChat(
     } catch (err) {
       // transport-level failure: try next fallback
       transientError = { status: 0, errorMsg: String(err) };
-      const next = pickFailover(catalog, current, tried);
+      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
       if (!next) break;
       tried.add(next.id);
       current = next;
@@ -317,7 +326,7 @@ async function handleChat(
       }
 
       transientError = { status: upstreamRes.status, errorMsg };
-      const next = pickFailover(catalog, current, tried);
+      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
       if (!next) break;
       tried.add(next.id);
       current = next;
