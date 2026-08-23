@@ -134,7 +134,7 @@ export function App() {
                   Bansos Router
                 </span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#202028] text-[#a1a1aa] border border-[#2c2c36] font-mono">
-                  v0.1.7
+                  v{__APP_VERSION__}
                 </span>
                 <span className="hidden md:inline-flex text-[11px] px-2 py-0.5 rounded-full bg-[#202028] text-[#60a5fa] border border-[#2b64e0]/30 font-medium">
                   Free & Keyless

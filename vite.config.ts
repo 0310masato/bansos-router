@@ -3,6 +3,7 @@ import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pkg from "./package.json";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -11,6 +12,10 @@ export default defineConfig({
     preact(),
     tailwindcss(),
   ],
+  // inject package.json version so the UI badge never goes stale
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   root: path.resolve(__dirname, "src/ui"),
   publicDir: path.resolve(__dirname, "src/ui/public"),
   build: {

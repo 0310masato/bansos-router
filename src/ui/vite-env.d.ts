@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 
-declare global {
-  interface RequestInit {
-    duplex?: "half" | "full";
-  }
+interface RequestInit {
+  duplex?: "half" | "full";
 }
+
+// injected by vite define (see vite.config.ts)
+declare const __APP_VERSION__: string;
+
