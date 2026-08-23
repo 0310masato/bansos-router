@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { ADAPTERS, findAdapter } from "../adapters";
@@ -88,6 +89,85 @@ async function getSetupModels(baseUrl: string): Promise<ModelDef[]> {
   return SEEDED_MODELS;
 }
 
+function update9RouterSqlite(dbPath: string, ctx: SetupContext): boolean {
+  const now = new Date().toISOString();
+  const nodeId = "openai-compatible-chat-bansos";
+  const nodeData = JSON.stringify({
+    prefix: "bansos",
+    apiType: "chat",
+    baseUrl: ctx.baseUrl,
+    name: "Bansos Router",
+  });
+  const connId = "bansos-default";
+  const connData = JSON.stringify({
+    apiKey: "bansos",
+    prefix: "bansos",
+    apiType: "chat",
+    baseUrl: ctx.baseUrl,
+    nodeName: "Bansos Router",
+  });
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sqliteMod = (globalThis as any).process?.getBuiltinModule?.("node:sqlite");
+    if (sqliteMod?.DatabaseSync) {
+      const db = new sqliteMod.DatabaseSync(dbPath);
+      db.prepare(
+        "INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)",
+      ).run(nodeId, "openai-compatible", "Bansos Router", nodeData, now, now);
+
+      db.prepare(
+        "INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).run(connId, nodeId, "api_key", "Bansos Router", null, 1, 1, connData, now, now);
+
+      db.close();
+      return true;
+    }
+  } catch {
+    // Fall through to sqlite3 CLI
+  }
+
+  try {
+    const sql = [
+      `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES('${nodeId}', 'openai-compatible', 'Bansos Router', '${nodeData.replace(/'/g, "''")}', '${now}', '${now}');`,
+      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES('${connId}', '${nodeId}', 'api_key', 'Bansos Router', NULL, 1, 1, '${connData.replace(/'/g, "''")}', '${now}', '${now}');`,
+    ].join("\n");
+    const res = spawnSync("sqlite3", [dbPath, sql], { encoding: "utf8" });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function undo9RouterSqlite(dbPath: string): boolean {
+  const nodeId = "openai-compatible-chat-bansos";
+  const connId = "bansos-default";
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sqliteMod = (globalThis as any).process?.getBuiltinModule?.("node:sqlite");
+    if (sqliteMod?.DatabaseSync) {
+      const db = new sqliteMod.DatabaseSync(dbPath);
+      db.prepare("DELETE FROM providerNodes WHERE id = ?").run(nodeId);
+      db.prepare("DELETE FROM providerConnections WHERE id = ?").run(connId);
+      db.close();
+      return true;
+    }
+  } catch {
+    // Fall through to sqlite3 CLI
+  }
+
+  try {
+    const sql = [
+      `DELETE FROM providerNodes WHERE id = '${nodeId}';`,
+      `DELETE FROM providerConnections WHERE id = '${connId}';`,
+    ].join("\n");
+    const res = spawnSync("sqlite3", [dbPath, sql], { encoding: "utf8" });
+    return res.status === 0;
+  } catch {
+    return false;
+  }
+}
+
 function applyAdapter(adapter: HarnessAdapter, ctx: SetupContext): number {
   let failed = 0;
   for (const write of adapter.render(ctx)) {
@@ -113,6 +193,14 @@ function applyAdapter(adapter: HarnessAdapter, ctx: SetupContext): number {
     writeConfig(targetPath, content);
     console.log(`  ✓ wrote ${targetPath}`);
   }
+
+  if (adapter.id === "9router") {
+    const sqlitePath = expandHome("~/.9router/db/data.sqlite");
+    if (fs.existsSync(sqlitePath) && update9RouterSqlite(sqlitePath, ctx)) {
+      console.log("  ✓ updated ~/.9router/db/data.sqlite");
+    }
+  }
+
   return failed;
 }
 
@@ -123,6 +211,11 @@ function undoAdapter(adapter: HarnessAdapter, ctx: SetupContext): void {
     if (!fs.existsSync(full)) {
       continue;
     }
+
+    if (writePath.endsWith(".sqlite")) {
+      continue;
+    }
+
     const existing = fs.readFileSync(full, "utf8");
 
     if (adapter.undoKeys) {
@@ -152,6 +245,13 @@ function undoAdapter(adapter: HarnessAdapter, ctx: SetupContext): void {
           console.log(`  ✗ ${writePath}: bansos block removed`);
         }
       }
+    }
+  }
+
+  if (adapter.id === "9router") {
+    const sqlitePath = expandHome("~/.9router/db/data.sqlite");
+    if (fs.existsSync(sqlitePath) && undo9RouterSqlite(sqlitePath)) {
+      console.log("  ✗ ~/.9router/db/data.sqlite: bansos keys removed");
     }
   }
 }

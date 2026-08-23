@@ -352,23 +352,23 @@ function nineRouterAdapter(): HarnessAdapter {
     id: "9router",
     name: "9Router",
     wire: "chat",
-    configPaths: ["~/.9router/db.json"],
+    configPaths: ["~/.9router/db.json", "~/.9router/db/data.sqlite"],
     render(ctx: SetupContext): ConfigWrite[] {
       const db = {
         providerNodes: [
           {
-            id: "bansos",
+            id: "openai-compatible-chat-bansos",
             name: "Bansos Router",
-            type: "custom",
+            type: "openai-compatible",
             prefix: "bansos",
-            apiType: "openai",
+            apiType: "chat",
             baseUrl: ctx.baseUrl,
           },
         ],
         providerConnections: [
           {
             id: "bansos-default",
-            provider: "bansos",
+            provider: "openai-compatible-chat-bansos",
             authType: "api_key",
             name: "Bansos Router",
             priority: 1,
@@ -386,9 +386,11 @@ function nineRouterAdapter(): HarnessAdapter {
       ];
     },
     undo(): string[] {
-      return ["~/.9router/db.json"];
+      return ["~/.9router/db.json", "~/.9router/db/data.sqlite"];
     },
     undoKeys: [
+      "providerNodes.openai-compatible-chat-bansos",
+      "providerConnections.bansos-default",
       "providerNodes.bansos",
       "providerConnections.bansos-default",
     ],

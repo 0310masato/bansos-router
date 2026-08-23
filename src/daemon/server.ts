@@ -743,7 +743,9 @@ async function handleAnthropic(
     const encoder = new AnthropicStreamEncoder();
     let streamUsage: TokenUsage | null = null;
     if (upstreamRes.body) {
-      for await (const frame of readSseStream(upstreamRes.body)) {
+      for await (const frame of readSseStream(
+        upstreamRes.body as unknown as import("node:stream/web").ReadableStream,
+      )) {
         if (frame.data === "[DONE]") {
           for (const ev of encoder.close()) res.write(ev);
           break;

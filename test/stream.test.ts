@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { ReadableStream } from "node:stream/web";
 import { readSseStream, sseData, sseDone, sseEvent } from "../src/protocols/stream";
 
 function streamOf(text: string): ReadableStream<Uint8Array> {

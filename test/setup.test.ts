@@ -115,7 +115,7 @@ test("findAdapter resolves 9router adapter", () => {
   assert.ok(adapter);
   assert.equal(adapter.id, "9router");
   assert.equal(adapter.wire, "chat");
-  assert.deepEqual(adapter.configPaths, ["~/.9router/db.json"]);
+  assert.deepEqual(adapter.configPaths, ["~/.9router/db.json", "~/.9router/db/data.sqlite"]);
 
   const writes = adapter.render({
     baseUrl: "http://127.0.0.1:17070/v1",
@@ -128,9 +128,9 @@ test("findAdapter resolves 9router adapter", () => {
   assert.equal(writes[0]?.mode, "merge");
 
   const parsed = JSON.parse(writes[0]?.content ?? "{}");
-  assert.equal(parsed.providerNodes[0].id, "bansos");
+  assert.equal(parsed.providerNodes[0].id, "openai-compatible-chat-bansos");
   assert.equal(parsed.providerNodes[0].baseUrl, "http://127.0.0.1:17070/v1");
-  assert.equal(parsed.providerConnections[0].provider, "bansos");
+  assert.equal(parsed.providerConnections[0].provider, "openai-compatible-chat-bansos");
 });
 
 test("9router merge and undo preserve other providers in db.json", () => {
@@ -155,7 +155,7 @@ test("9router merge and undo preserve other providers in db.json", () => {
 
   assert.equal(parsedMerged.providerNodes.length, 2);
   assert.equal(parsedMerged.providerNodes[0].id, "kiro");
-  assert.equal(parsedMerged.providerNodes[1].id, "bansos");
+  assert.equal(parsedMerged.providerNodes[1].id, "openai-compatible-chat-bansos");
 
   assert.equal(parsedMerged.providerConnections.length, 2);
   assert.equal(parsedMerged.providerConnections[0].id, "kiro-1");

@@ -1,3 +1,6 @@
+// use node's web stream type: the DOM global ReadableStream type does not
+// declare [Symbol.asyncIterator], but the node runtime (fetch response body) does.
+import type { ReadableStream } from "node:stream/web";
 import type http from "node:http";
 
 // openai-style data:{json} frame
