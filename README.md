@@ -47,8 +47,9 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 
 Supported harnesses for `bansos setup`: `claude-code`, `aider`, `opencode`,
 `hermes`, `goose`, `openclaw`, `antigravity`, `jcode`, `9router`, `continue`, `cline`, `roo`.
-pi is handled by the separate extension. `codex` writes its config too, but its
-`wire_api = "responses"` needs M3. See the roadmap.
+pi is handled by the separate extension. `codex` writes its config too; its
+`wire_api = "responses"` is served by the daemon (M3), so `bansos setup codex`
+works out of the box.
 
 ## What it does
 

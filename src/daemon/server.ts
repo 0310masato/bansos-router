@@ -4,8 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Readable, Transform } from "node:stream";
 import type { Logger } from "../logger";
-import type { ModelDef } from "../upstreams/types";
+import type { ModelDef, Upstream } from "../upstreams/types";
 import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";
+import { parseResponsesTurn, renderResponse, ResponsesStreamEncoder } from "../protocols/responses";
 import {
   parseAnthropicRequest,
   openAiCompletionToAnthropicMessage,
@@ -372,6 +373,111 @@ export function pickFailover(
   }
   return best;
 }
+// shared forward+failover core used by both /v1/chat/completions and
+// /v1/responses. resolves the model, sanitizes, then retries the chosen
+// upstream with failover on 429/5xx. returns the final upstream Response plus
+// the model that served it, or a terminal error to forward to the client.
+type ForwardResult = { response: Response; model: ModelDef; upstream: Upstream };
+type ForwardError = { status: number; message: string };
+async function runChatForward(
+  req: http.IncomingMessage,
+  catalog: RuntimeCatalog,
+  log: Logger,
+  parsedModel: string,
+  sanitizedBody: Record<string, unknown>,
+  stream: boolean,
+): Promise<ForwardResult | ForwardError> {
+  const model = catalog.resolve(parsedModel);
+  if (!model) {
+    return { status: 400, message: `unknown model: ${parsedModel}` };
+  }
+  const upstream = catalog.upstreamBySource(model.source);
+  if (!upstream) {
+    return { status: 502, message: `no upstream for source: ${model.source}` };
+  }
+
+  const requestStartedAt = Date.now();
+  const relay = loadRelayState();
+  const noFailover = req.headers["x-bansos-no-failover"] === "1";
+  const tried = new Set<string>([model.id]);
+  let current: ModelDef = model;
+  let currentUpstream = catalog.upstreamBySource(current.source)!;
+  let transientError: ForwardError | null = null;
+
+  for (let attempt = 0; attempt <= MAX_FAILOVER_RETRIES; attempt++) {
+    if (current.id !== model.id || attempt > 0) {
+      log.warn("upstream rejected — fallback used", {
+        from: model.id,
+        to: current.id,
+        fromUpstream: currentUpstream.id,
+        status: transientError?.status,
+        durationMs: Date.now() - requestStartedAt,
+        attempt,
+        error: transientError?.message.slice(0, 100),
+      });
+    }
+
+    const headers = new Headers({
+      "content-type": "application/json",
+      ...currentUpstream.requestHeaders(current),
+    });
+    const outboundBody = JSON.stringify({ ...sanitizedBody, model: current.id });
+
+    let upstreamRes: Response;
+    try {
+      upstreamRes = await relayFetch(relay, currentUpstream.chatUrl, {
+        method: "POST",
+        headers,
+        body: outboundBody,
+        duplex: "half",
+      });
+    } catch (err) {
+      transientError = { status: 0, message: String(err) };
+      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
+    }
+
+    if (upstreamRes.status >= 400) {
+      const text = await upstreamRes.text();
+      let errorMsg = text.slice(0, 256) || "upstream error";
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json?.error?.message ?? json?.message ?? errorMsg;
+      } catch {
+        // ignore parse failure; raw text stands as error message
+      }
+
+      const transient = upstreamRes.status === 429 || upstreamRes.status >= 500;
+      if (!transient) {
+        log.warn("upstream rejected", {
+          model: current.id,
+          upstream: currentUpstream.id,
+          status: upstreamRes.status,
+          durationMs: Date.now() - requestStartedAt,
+          error: errorMsg.slice(0, 100),
+        });
+        return { status: upstreamRes.status, message: errorMsg };
+      }
+
+      transientError = { status: upstreamRes.status, message: errorMsg };
+      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
+      if (!next) break;
+      tried.add(next.id);
+      current = next;
+      currentUpstream = catalog.upstreamBySource(current.source)!;
+      continue;
+    }
+
+    return { response: upstreamRes, model: current, upstream: currentUpstream };
+  }
+
+  return transientError ?? { status: 502, message: "no upstream candidates left" };
+}
+
 async function handleChat(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -400,182 +506,238 @@ async function handleChat(
     return;
   }
 
-  const model = catalog.resolve(parsed.value.model);
-  if (!model) {
-    sendJson(res, 400, {
-      error: {
-        message: `unknown model: ${parsed.value.model}`,
-        hint: `available: ${catalog.models.map((m) => m.id).join(", ")}`,
-      },
-    });
-    return;
-  }
-
-  const upstream = catalog.upstreamBySource(model.source);
-  if (!upstream) {
-    sendJson(res, 502, { error: { message: `no upstream for source: ${model.source}` } });
-    return;
-  }
-
-  const headers = new Headers({
-    "content-type": "application/json",
-    ...upstream.requestHeaders(model),
-  });
-
-  log.info("chat → upstream", {
-    model: model.id,
-    upstream: upstream.id,
-    stream: parsed.value.stream,
-  });
-
   const requestStartedAt = Date.now();
   const sanitizedBody = sanitizeChatBody(
     body as Record<string, unknown>,
-    model.compat.supportsDeveloperRole,
+    catalog.resolve(parsed.value.model)?.compat.supportsDeveloperRole ?? false,
   ) as Record<string, unknown>;
   if (parsed.value.stream) {
     sanitizedBody.stream_options = { include_usage: true };
   }
 
-  const relay = loadRelayState();
-  // ping probe sets this header: report the model's own status, no fallback
-  const noFailover = req.headers["x-bansos-no-failover"] === "1";
-  const tried = new Set<string>([model.id]);
-  let current: ModelDef = model;
-  let currentUpstream = catalog.upstreamBySource(current.source)!;  let transientError: { status: number; errorMsg: string } | null = null;
-
-  for (let attempt = 0; attempt <= MAX_FAILOVER_RETRIES; attempt++) {
-    if (current.id !== model.id || attempt > 0) {
-      log.warn("upstream rejected — fallback used", {
-        from: model.id,
-        to: current.id,
-        fromUpstream: currentUpstream.id,
-        status: transientError?.status,
-        durationMs: Date.now() - requestStartedAt,
-        attempt,
-        error: transientError?.errorMsg.slice(0, 100),
-      });
-    }
-
-    const headers = new Headers({
-      "content-type": "application/json",
-      ...currentUpstream.requestHeaders(current),
+  const result = await runChatForward(
+    req,
+    catalog,
+    log,
+    parsed.value.model,
+    sanitizedBody,
+    parsed.value.stream,
+  );
+  if ("status" in result) {
+    sendJson(res, result.status, {
+      error: { message: result.message, type: "upstream_error", status: result.status },
     });
-    const outboundBody = JSON.stringify({ ...sanitizedBody, model: current.id });
-
-    let upstreamRes: Response;
-    try {
-      upstreamRes = await relayFetch(relay, currentUpstream.chatUrl, {
-        method: "POST",
-        headers,
-        body: outboundBody,
-        duplex: "half",
-      });
-    } catch (err) {
-      // transport-level failure: try next fallback
-      transientError = { status: 0, errorMsg: String(err) };
-      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
-      if (!next) break;
-      tried.add(next.id);
-      current = next;
-      currentUpstream = catalog.upstreamBySource(current.source)!;
-      continue;
-    }
-
-    if (upstreamRes.status >= 400) {
-      const text = await upstreamRes.text();
-      let errorMsg = text.slice(0, 256) || "upstream error";
-      try {
-        const json = JSON.parse(text);
-        errorMsg = json?.error?.message ?? json?.message ?? errorMsg;
-      } catch {
-        // ignore parse failure; raw text stands as error message
-      }
-
-      const transient = upstreamRes.status === 429 || upstreamRes.status >= 500;
-      if (!transient) {
-        // client error from upstream; forward as-is, no fallback
-        log.warn("upstream rejected", {
-          model: current.id,
-          upstream: currentUpstream.id,
-          status: upstreamRes.status,
-          durationMs: Date.now() - requestStartedAt,
-          error: errorMsg.slice(0, 100),
-        });
-        sendJson(res, upstreamRes.status, {
-          error: {
-            message: errorMsg,
-            type: "upstream_error",
-            status: upstreamRes.status,
-          },
-        });
-        return;
-      }
-
-      transientError = { status: upstreamRes.status, errorMsg };
-      const next = noFailover ? undefined : pickFailover(catalog, current, tried);
-      if (!next) break;
-      tried.add(next.id);
-      current = next;
-      currentUpstream = catalog.upstreamBySource(current.source)!;
-      continue;
-    }
-
-    // 2xx: forward the response, capturing token usage on the way
-    const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
-    res.writeHead(upstreamRes.status, { "content-type": contentType, ...CORS_HEADERS });
-
-    if (!parsed.value.stream) {
-      // non-stream: buffer once to read usage, then forward the exact bytes
-      const text = await upstreamRes.text();
-      try {
-        const usage = extractUsage(JSON.parse(text));
-        if (usage) {
-          const fields: Record<string, unknown> = {
-            model: current.id,
-            upstream: currentUpstream.id,
-            durationMs: Date.now() - requestStartedAt,
-            ...usage,
-          };
-          if (current.id !== model.id) fields.failoverFrom = model.id;
-          log.info("chat done", fields);
-        }
-      } catch {
-        // usage is informational only; the plain response still goes out
-      }
-      res.end(text);
-      return;
-    }
-
-    if (upstreamRes.body) {
-      Readable.fromWeb(
-        upstreamRes.body as import("node:stream/web").ReadableStream,
-      )
-        .pipe(logUsageTransform(current.id, currentUpstream.id, log, requestStartedAt))
-        .pipe(res);
-    } else {
-      res.end();
-    }
     return;
   }
 
-  // fell out of the loop: every candidate rejected with 429/5xx
-  const final = transientError ?? { status: 502, errorMsg: "no upstream candidates left" };
-  log.warn("upstream rejected", {
-    model: model.id,
+  const { response: upstreamRes, model: current, upstream: currentUpstream } = result;
+  const model = catalog.resolve(parsed.value.model) ?? current;
+  log.info("chat → upstream", {
+    model: current.id,
     upstream: currentUpstream.id,
-    status: final.status || 502,
-    durationMs: Date.now() - requestStartedAt,
-    attempts: tried.size,
-    error: final.errorMsg.slice(0, 100),
+    stream: parsed.value.stream,
   });
-  sendJson(res, final.status || 502, {
-    error: {
-      message: final.errorMsg,
-      type: "upstream_error",
-      status: final.status || 502,
+
+  // 2xx: forward the response, capturing token usage on the way
+  const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
+  res.writeHead(upstreamRes.status, { "content-type": contentType, ...CORS_HEADERS });
+
+  if (!parsed.value.stream) {
+    // non-stream: buffer once to read usage, then forward the exact bytes
+    const text = await upstreamRes.text();
+    try {
+      const usage = extractUsage(JSON.parse(text));
+      if (usage) {
+        const fields: Record<string, unknown> = {
+          model: current.id,
+          upstream: currentUpstream.id,
+          durationMs: Date.now() - requestStartedAt,
+          ...usage,
+        };
+        if (current.id !== model.id) fields.failoverFrom = model.id;
+        log.info("chat done", fields);
+      }
+    } catch {
+      // usage is informational only; the plain response still goes out
+    }
+    res.end(text);
+    return;
+  }
+
+  if (upstreamRes.body) {
+    Readable.fromWeb(
+      upstreamRes.body as import("node:stream/web").ReadableStream,
+    )
+      .pipe(logUsageTransform(current.id, currentUpstream.id, log, requestStartedAt))
+      .pipe(res);
+  } else {
+    res.end();
+  }
+}
+
+// Codex CLI (wire_api = "responses") -> translate to openai chat -> forward ->
+// translate back into responses-shaped output.
+async function handleResponses(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  catalog: RuntimeCatalog,
+  log: Logger,
+): Promise<void> {
+  let bodyText: string;
+  try {
+    bodyText = await readBody(req);
+  } catch {
+    sendJson(res, 413, { error: { message: "request body too large" } });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    sendJson(res, 400, { error: { message: "invalid JSON body" } });
+    return;
+  }
+
+  const parsed = parseResponsesTurn(body);
+  if (!parsed.ok) {
+    sendJson(res, 400, { error: { message: parsed.error } });
+    return;
+  }
+
+  const requestStartedAt = Date.now();
+  const target = catalog.resolve(parsed.value.model);
+  const supportsDev = target?.compat.supportsDeveloperRole ?? false;
+
+  // build the openai chat body from the parsed responses turn
+  const chatMessages: any[] = [];
+  if (parsed.value.system) {
+    chatMessages.push({ role: "system", content: parsed.value.system });
+  }
+  for (const m of parsed.value.messages) {
+    chatMessages.push({
+      role: m.role,
+      content: m.content,
+      ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
+      ...(m.toolCalls
+        ? { tool_calls: m.toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: { name: tc.name, arguments: tc.arguments },
+          })) }
+        : {}),
+    });
+  }
+
+  const sanitizedBody: Record<string, unknown> = sanitizeChatBody(
+    {
+      model: parsed.value.model,
+      messages: chatMessages,
+      ...(parsed.value.tools
+        ? {
+            tools: parsed.value.tools.map((t) => ({
+              type: "function",
+              function: { name: t.name, description: t.description, parameters: t.parameters },
+            })),
+          }
+        : {}),
+      ...(parsed.value.maxTokens ? { max_tokens: parsed.value.maxTokens } : {}),
+      ...(parsed.value.reasoningEffort ? { reasoning_effort: parsed.value.reasoningEffort } : {}),
+      stream: parsed.value.stream,
     },
+    supportsDev,
+  ) as Record<string, unknown>;
+  if (parsed.value.stream) {
+    sanitizedBody.stream_options = { include_usage: true };
+  }
+
+  const result = await runChatForward(
+    req,
+    catalog,
+    log,
+    parsed.value.model,
+    sanitizedBody,
+    parsed.value.stream,
+  );
+  if ("status" in result) {
+    sendJson(res, result.status, {
+      error: { message: result.message, type: "upstream_error", status: result.status },
+    });
+    return;
+  }
+
+  const { response: upstreamRes, model: current, upstream: currentUpstream } = result;
+  const resolved = catalog.resolve(parsed.value.model) ?? current;
+  log.info("responses → upstream", {
+    model: current.id,
+    upstream: currentUpstream.id,
+    stream: parsed.value.stream,
   });
+
+  if (!parsed.value.stream) {
+    const text = await upstreamRes.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      sendJson(res, 502, { error: { message: "invalid upstream response" } });
+      return;
+    }
+    const usage = extractUsage(json);
+    if (usage) {
+      const fields: Record<string, unknown> = {
+        model: current.id,
+        upstream: currentUpstream.id,
+        durationMs: Date.now() - requestStartedAt,
+        ...usage,
+      };
+      if (current.id !== resolved.id) fields.failoverFrom = resolved.id;
+      log.info("responses done", fields);
+    }
+    const out = renderResponse(json, current.id);
+    res.writeHead(upstreamRes.status, { "content-type": "application/json", ...CORS_HEADERS });
+    res.end(JSON.stringify(out));
+    return;
+  }
+
+  // streaming: translate upstream openai sse -> responses sse events
+  res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    "connection": "keep-alive",
+    ...CORS_HEADERS,
+  });
+  const encoder = new ResponsesStreamEncoder();
+  let first = true;
+  let streamUsage: TokenUsage | null = null;
+  if (upstreamRes.body) {
+    for await (const frame of readSseStream(
+      upstreamRes.body as unknown as import("node:stream/web").ReadableStream,
+    )) {
+      if (frame.data === "[DONE]") continue;
+      let json: any;
+      try { json = JSON.parse(frame.data); } catch { continue; }
+      if (first) {
+        first = false;
+        for (const ev of encoder.open(current.id)) res.write(ev);
+      }
+      const usage = extractUsage(json);
+      if (usage) streamUsage = usage;
+      for (const ev of encoder.push(json)) res.write(ev);
+    }
+  }
+  for (const ev of encoder.close()) res.write(ev);
+  if (streamUsage) {
+    const fields: Record<string, unknown> = {
+      model: current.id,
+      upstream: currentUpstream.id,
+      durationMs: Date.now() - requestStartedAt,
+      ...streamUsage,
+    };
+    if (current.id !== resolved.id) fields.failoverFrom = resolved.id;
+    log.info("responses done", fields);
+  }
+  res.end();
 }
 
 // anthropic messages in -> translate to openai chat -> forward -> translate back
@@ -1024,6 +1186,11 @@ export function createServer(opts: ServerOptions): http.Server {
       return;
     }
 
+    if (method === "POST" && (url === "/v1/responses" || url === "/responses")) {
+      void handleResponses(req, res, catalog, log);
+      return;
+    }
+
     if (method === "POST" && (url === "/v1/chat/completions" || url === "/chat/completions")) {
       void handleChat(req, res, catalog, log);
       return;
@@ -1033,14 +1200,6 @@ export function createServer(opts: ServerOptions): http.Server {
       void handleAnthropic(req, res, catalog, log);
       return;
     }
-
-    const notImplemented = (endpoint: string) =>
-      sendJson(res, 501, {
-        error: {
-          message: `${endpoint} not implemented yet`,
-          hint: "milestone M3 (responses)",
-        },
-      });
 
     const notFound = () => {
       const accept = req.headers.accept ?? "";
@@ -1077,7 +1236,7 @@ export function createServer(opts: ServerOptions): http.Server {
       sendJson(res, 404, { error: { message: "not found" } });
     };
 
-    if (url === "/v1/responses" || url === "/responses") notImplemented("POST /v1/responses");
+    if (url === "/v1/responses" || url === "/responses") notFound();
     else notFound();
   });
 }

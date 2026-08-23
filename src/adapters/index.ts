@@ -141,7 +141,7 @@ function codexAdapter(): HarnessAdapter {
         `[model_providers.bansos]`,
         `name = "Bansos Router"`,
         `base_url = "${ctx.baseUrl}"`,
-        `env_key = "BANSOS_API_KEY"`,
+        `experimental_bearer_token = "bansos"`,
         `wire_api = "responses"`,
       ];
       return [

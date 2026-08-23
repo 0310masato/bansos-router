@@ -2,7 +2,7 @@
 # build:  docker build -t bansos-router .
 # run:    docker run -d --name bansos -p 17070:17070 -v bansos-data:/root/.bansos bansos-router
 
-# --- stage 1: build the zero-dependency bundle ---
+# stage 1: build the zero-dependency bundle
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -11,7 +11,7 @@ COPY src/ src/
 COPY tsconfig.json vite.config.ts ./
 RUN npm run build
 
-# --- stage 2: minimal runtime (cli bundle + built ui, no dev deps) ---
+# stage 2: minimal runtime (cli bundle + built ui, no dev deps)
 FROM node:22-alpine
 LABEL org.opencontainers.image.title="bansos-router"
 LABEL org.opencontainers.image.description="Free keyless coding models routed through one local OpenAI/Anthropic endpoint"

@@ -27,7 +27,7 @@ Legend: 🟢 config-only · 🟢* config-only but needs M3 wire (not live yet) �
 | **Claude Code** | Anthropic Messages | `~/.claude/settings.json` (`env`) | 🟢 | `ANTHROPIC_BASE_URL=http://127.0.0.1:17070` + `ANTHROPIC_AUTH_TOKEN=bansos` + model mappings |
 | **Aider** | OpenAI Chat | env / `aider.conf.yml` | 🟢 | `OPENAI_API_BASE=http://127.0.0.1:17070/v1`, `OPENAI_API_KEY=bansos`, `AIDER_MODEL=<id>` |
 | **OpenCode** | OpenAI Chat | `~/.config/opencode/opencode.json` | 🟢 | Custom provider with `@ai-sdk/openai-compatible`, `baseURL` |
-| **Codex CLI** | OpenAI Responses | `~/.codex/config.toml` | 🟢* | `[model_providers.bansos] base_url`, `wire_api = "responses"` — requires M3 (daemon returns 501 today) |
+| **Codex CLI** | OpenAI Responses | `~/.codex/config.toml` | 🟢 | `[model_providers.bansos] base_url`, `wire_api = "responses"` — daemon serves `/v1/responses` (M3) |
 | **Hermes (Nous)** | OpenAI Chat | `~/.hermes/config.yaml` | 🟢 | `model.provider: custom` + `model.base_url` |
 | **OpenClaw** | OpenAI Chat or Anthropic | `~/.openclaw/config.json` / agent `models.json` | 🟢 | `models.providers.<id>.baseUrl`; can pick either wire |
 | **Goose** | OpenAI Chat | `~/.config/goose/custom_providers/*.json` | 🟢 | `engine: "openai"`, `base_url`, model list |
@@ -149,8 +149,8 @@ model_provider = "bansos"
 [model_providers.bansos]
 name = "Bansos Router"
 base_url = "http://127.0.0.1:17070/v1"
-env_key = "BANSOS_API_KEY"   # placeholder accepted
 wire_api = "responses"
+experimental_bearer_token = "bansos"   # keyless: router ignores auth; any token works
 ```
 
 ### Hermes — `~/.hermes/config.yaml`
