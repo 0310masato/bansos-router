@@ -1,0 +1,16 @@
+services:
+  bansos:
+    build: .
+    image: bansos-router:latest
+    container_name: bansos
+    restart: unless-stopped
+    ports:
+      - "17070:17070"
+    volumes:
+      # persist state.json, relay-state.json, logs across restarts
+      - bansos-data:/root/.bansos
+    # override port/bind here if needed; bind must stay 0.0.0.0 inside the container
+    # command: ["node", "dist/cli/index.js", "daemon", "--bind", "0.0.0.0", "--port", "17070"]
+
+volumes:
+  bansos-data:
