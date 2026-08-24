@@ -41,6 +41,9 @@ const SAFE_FIELD_NAMES = new Set([
   "fromUpstream",
   "failoverFrom",
   "stream",
+  "task",
+  "requiredTier",
+  "modelFit",
 ]);
 
 const SECRET_TYPES = new Set<SecretType>([
