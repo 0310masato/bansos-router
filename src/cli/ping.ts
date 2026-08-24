@@ -56,7 +56,8 @@ async function pingModel(base: string, modelId: string): Promise<PingResult> {
 }
 
 export async function runPing(argv: string[]): Promise<number> {
-  const targetModel = argv[0];
+  const json = argv.includes("--json");
+  const targetModel = argv.filter((a) => a !== "--json")[0];
   const config = loadConfig();
   const base = `http://${config.bind}:${config.port}`;
 
@@ -98,21 +99,32 @@ export async function runPing(argv: string[]): Promise<number> {
     targets = models.map((m) => m.id);
   }
 
-  console.log(`PING ${base} (${targets.length} model${targets.length > 1 ? "s" : ""}):\n`);
-
   // ping all in parallel
   const results = await Promise.all(targets.map((id) => pingModel(base, id)));
 
+  const okCount = results.filter((r) => r.ok).length;
+  if (json) {
+    const rateLimited = results.filter((r) => !r.ok && r.status === 429).length;
+    console.log(JSON.stringify({
+      base,
+      results,
+      summary: { ok: okCount, rateLimited, failed: results.length - okCount - rateLimited, total: results.length },
+    }));
+    return okCount === 0 ? 1 : 0;
+  }
+
+  console.log(`PING ${base} (${targets.length} model${targets.length > 1 ? "s" : ""}):\n`);
+
   const maxLen = Math.max(...results.map((r) => r.id.length), 10);
 
-  let okCount = 0;
+  let okTotal = 0;
   let rateLimitCount = 0;
   let errCount = 0;
 
   for (const r of results) {
     const padded = r.id.padEnd(maxLen + 2);
     if (r.ok) {
-      okCount++;
+      okTotal++;
       const ms = `${r.latencyMs}ms`.padStart(7);
       console.log(`  ✓ ${padded} ${ms}  ${r.message}`);
     } else if (r.status === 429) {
@@ -127,7 +139,7 @@ export async function runPing(argv: string[]): Promise<number> {
   }
 
   if (targets.length > 1) {
-    console.log(`\nSummary: ${okCount} ok, ${rateLimitCount} rate limited, ${errCount} failed (${targets.length} total)`);
+    console.log(`\nSummary: ${okTotal} ok, ${rateLimitCount} rate limited, ${errCount} failed (${targets.length} total)`);
   }
 
   return (rateLimitCount + errCount) === targets.length ? 1 : 0;

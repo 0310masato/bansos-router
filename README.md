@@ -3,10 +3,10 @@
 Free, keyless coding models for every coding harness, through one local
 daemon. Works without accounts or API keys.
 
-Status: M0, M1, and M2 are working. OpenAI Chat Completions
-(`/v1/chat/completions`) and Anthropic Messages (`/v1/messages`) are live,
-along with `bansos setup` and the pi extension. OpenAI Responses (for Codex
-CLI) lands in M3. Full roadmap in `docs/architecture.md`.
+Status: M0-M3 are working. OpenAI Chat Completions (`/v1/chat/completions`),
+Anthropic Messages (`/v1/messages`), and OpenAI Responses (`/v1/responses`, for
+Codex CLI) are live, along with `bansos setup` and the pi extension. Docker
+deployment is supported. Full roadmap in `docs/architecture.md`.
 
 ## Quick start
 
@@ -25,8 +25,32 @@ Open `http://127.0.0.1:17070` in your browser to access the Web UI dashboard (ex
 
 Any OpenAI-compatible or Anthropic-compatible client can now use
 `http://127.0.0.1:17070` (chat at `/v1/chat/completions`, Claude Code at
-`/v1/messages`). `bansos setup <harness>` merges or appends config blocks, and
+`/v1/messages`, Codex at `/v1/responses`). `bansos setup <harness>` merges or appends config blocks, and
 `--undo` removes them again.
+
+## Docker
+
+Run the daemon in a container instead of installing globally:
+
+```bash
+docker build -t bansos-router .
+docker run -d --name bansos -p 17070:17070 -v bansos-data:/root/.bansos bansos-router
+```
+
+Or with compose:
+
+```bash
+docker compose up -d
+```
+
+- Image is a multi-stage build on node:22-alpine (~58 MB compressed), CLI +
+  daemon + Web UI included, zero runtime dependencies.
+- The container runs the daemon in the foreground (Docker owns the lifecycle)
+  bound to `0.0.0.0`, with tini for correct signal forwarding and a healthcheck
+  on `/healthz`.
+- State persists across restarts in the `bansos-data` volume; point your
+  harnesses at `http://127.0.0.1:17070` as usual.
+- `docker compose logs -f` replaces `bansos logs` inside the container.
 
 ## CLI reference
 
@@ -35,14 +59,15 @@ Any OpenAI-compatible or Anthropic-compatible client can now use
 | `bansos start [--bg] [--port N] [--bind H]` | Run the daemon (foreground, or detached with `--bg`) |
 | `bansos logs` | Tail the daemon log in real time (for a `--bg` daemon), same output as `bansos start` |
 | `bansos stop` | Stop all running daemons |
-| `bansos status` | Daemon status (port, model count, alive models); reports every running daemon on the auto-bump range (17070-17090) |
-| `bansos models` | List live catalog from `/v1/models` |
-| `bansos ping [model]` | Probe live latency and rate-limit status of all models (or a specific model) |
+| `bansos status [--json]` | Daemon status (port, model count, alive models); reports every running daemon on the auto-bump range (17070-17090) |
+| `bansos models [--json]` | List live catalog from `/v1/models` |
+| `bansos ping [model] [--json]` | Probe live latency and rate-limit status of all models (or a specific model) |
 | `bansos refresh` | Ask the daemon to re-run health checks now |
 | `bansos setup <harness...> [--model <id>] [--dry-run] [--undo]` | Write, update, or undo harness configs |
 | `bansos relay <on\|off\|status\|url\|use\|list\|remove>` | Manage relay egress (deploy comes in M4) |
 | `bansos doctor` | Diagnose daemon reachability and harness config validity |
 | `bansos --version` | Print version |
+| `bansos <command> --help` / `bansos help <command>` | Per-command usage, defaults, exit codes, examples |
 | `bansosd` | Alias for the daemon (e.g. `bansosd --bg`) |
 
 Supported harnesses for `bansos setup`: `claude-code`, `aider`, `opencode`,
@@ -53,9 +78,9 @@ works out of the box.
 
 ## What it does
 
-- One local daemon on `127.0.0.1:17070`, started with `bansos start`. Today it
-  speaks two wire protocols: OpenAI Chat Completions and Anthropic Messages.
-  OpenAI Responses, for Codex CLI, lands in M3.
+- One local daemon on `127.0.0.1:17070`, started with `bansos start`. It speaks
+  three wire protocols: OpenAI Chat Completions, Anthropic Messages, and OpenAI
+  Responses (Codex CLI).
 - Keyless free upstreams only: OpenCode Zen, KiloCode gateway, and LLM7.
 - `bansos setup <harness>` writes config for Claude Code, Aider, OpenCode,
   Codex, Hermes, Goose, OpenClaw, Antigravity, JCode, 9Router, Continue, Cline, and Roo Code.

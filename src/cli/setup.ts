@@ -34,13 +34,7 @@ function parseArgs(argv: string[]): SetupArgs {
     if (a === "--model") args.model = argv[++i];
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--undo") args.undo = true;
-    else if (a === "--help" || a === "-h") {
-      console.log(`bansos setup <harness...> [--model <id>] [--dry-run] [--undo]
-
-Harnesses: ${ADAPTERS.map((a) => a.id).join(", ")}
-`);
-      process.exit(0);
-    } else args.harnesses.push(a);
+    else args.harnesses.push(a);
   }
   return args;
 }

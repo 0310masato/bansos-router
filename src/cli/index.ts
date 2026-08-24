@@ -14,25 +14,165 @@ function help(): void {
   console.log(`bansos — free, keyless coding models for every agent harness
 
 Usage:
-  bansos start [--bg] [--port N] [--bind H]    start daemon (--bg = detached, log to ~/.bansos/logs/bansosd.log)
-  bansos stop                                  stop all running daemons
-  bansos setup <harness...> [--model <id>] [--dry-run] [--undo]  write harness config
-  bansos status                                daemon status
-  bansos models                                list live catalog
-  bansos ping [model]                          probe health and latency of model(s)
-  bansos refresh                               re-run health checks
-  bansos logs                                  tail the daemon log live (start it with --bg first)
-  bansos relay <on|off|status|url|use|list|remove|deploy>  manage relay egress
-  bansos doctor                                diagnose setup
-  bansos --version                             print version
+  bansos <command> [flags]
+
+Commands:
+  start       start the daemon (--bg = detached)
+  stop        stop all running daemons
+  setup       write harness config files
+  status      daemon status (aliases: none)
+  models      list live catalog
+  ping        probe health and latency of model(s)
+  refresh     re-run health checks
+  logs        tail the daemon log live
+  relay       manage relay egress
+  doctor      diagnose setup
+
+Global flags:
+  --json      structured output on status / models / ping (agent-friendly)
+  --version   print version
+  --help      this help; "bansos <command> --help" for per-command help
+
+Defaults:
+  port 17070 (auto-bumps to 17090 when busy), bind 127.0.0.1,
+  state at ~/.bansos/, config at ~/.bansos/config.json,
+  log at ~/.bansos/logs/bansosd.log
+
+Exit codes: 0 success, 1 error (daemon unreachable, unknown command/flag/model).
+
+"start" without --bg runs foreground and blocks (Ctrl+C stops it).
 
 Harnesses: claude-code, aider, opencode, codex, hermes, goose,
            openclaw, antigravity, jcode, 9router, continue, cline, roo
            (pi via the separate extension)
 
+Examples:
+  bansos start --bg              # daemon in background, then:
+  bansos setup codex             # wire Codex CLI to the router
+  bansos ping x-preview-f-free   # probe one model
+  bansos status --json           # machine-readable status
+
 "bansosd" still works as an alias for the daemon (e.g. "bansosd --bg").
 `);
 }
+
+// per-command help shown by "bansos <cmd> --help" and "bansos help <cmd>"
+const CMD_HELP: Record<string, string> = {
+  start: `bansos start — start the daemon
+
+Usage:
+  bansos start [--bg] [--port N] [--bind H]
+
+Flags:
+  --bg          run detached; logs append to ~/.bansos/logs/bansosd.log
+  --port, -p N  port to bind (default 17070, bumps +1 up to 17090 while busy)
+  --bind H      address to bind (default 127.0.0.1; use 0.0.0.0 in containers)
+
+Notes:
+  Without --bg the daemon runs foreground and blocks until Ctrl+C/SIGTERM.
+
+Examples:
+  bansos start --bg
+  bansos start --bg --port 18000
+`,
+  stop: `bansos stop — stop every running daemon (SIGTERM, then SIGKILL after 400ms)
+
+Usage:
+  bansos stop
+
+Exit codes: 0 always (0 even when nothing was running).
+`,
+  setup: `bansos setup — write harness config files pointing at the router
+
+Usage:
+  bansos setup <harness...> [--model <id>] [--dry-run] [--undo]
+
+Flags:
+  --model <id>  default model id written into configs (default tencent/hy3:free)
+  --dry-run     print what would be written, change nothing
+  --undo        remove bansos blocks/keys previously written by setup
+
+Notes:
+  Model ids come from "bansos models". Without --model the catalog default is used.
+  Config locations are listed under each harness in docs/harnesses.md.
+
+Examples:
+  bansos setup codex
+  bansos setup claude-code aider --model hy3-free
+  bansos setup codex --undo
+`,
+  status: `bansos status — show daemon reachability and model count
+
+Usage:
+  bansos status [--json]
+
+Flags:
+  --json    emit { "daemons": [...] } instead of text
+
+Probes ports 17070-17090 so a bumped-port daemon is still found.
+Exit codes: 0 daemon reachable, 1 not reachable.
+`,
+  models: `bansos models — list the live model catalog
+
+Usage:
+  bansos models [--json]
+
+Flags:
+  --json    emit the raw /v1/models document instead of one id per line
+
+Requires a running daemon (bansos start).
+`,
+  ping: `bansos ping — probe model health and latency with a tiny completion
+
+Usage:
+  bansos ping [model] [--json]
+
+Arguments:
+  model     id from "bansos models"; omit to probe every model in parallel
+
+Flags:
+  --json    emit { "results": [...], "summary": {...} } instead of a table
+
+Notes:
+  Probes set x-bansos-no-failover so the reported status is the model's own.
+Exit codes: 0 at least one model answered, 1 all failed/unreachable.
+
+Example:
+  bansos ping hy3-free
+`,
+  refresh: `bansos refresh — ask the daemon to re-run upstream health checks now
+
+Usage:
+  bansos refresh
+
+Exit codes: 0 refreshed, 1 daemon unreachable.
+`,
+  logs: `bansos logs — tail ~/.bansos/logs/bansosd.log live
+
+Usage:
+  bansos logs
+
+Shows the last 50 lines, then follows appends (500ms poll). Ctrl+C stops.
+Only useful after "bansos start --bg"; a foreground daemon already prints.
+Exit codes: 1 when no log file exists yet.
+`,
+  relay: `bansos relay — manage relay egress for keyless upstreams
+
+Usage:
+  bansos relay <on|off|status|url <URL>|use <URL>|list|remove <URL>|deploy>
+
+Run "bansos relay" without arguments for the full subcommand list.
+`,
+  doctor: `bansos doctor — diagnose the local setup
+
+Usage:
+  bansos doctor
+
+Checks daemon reachability and every harness config file, prints an update
+notice when one exists.
+Exit codes: 0 healthy, 1 any check failed.
+`,
+};
 
 function isDaemonFlag(a: string | undefined): boolean {
   return a === "--port" || a === "-p" || a === "--bind" || a === "--bg";
@@ -48,26 +188,45 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  switch (argv[0]) {
+  const json = argv.includes("--json");
+  const args = argv.filter((a) => a !== "--json");
+
+  // per-command help: "bansos <cmd> --help/-h" and "bansos help <cmd>"
+  const wantsHelp = args.includes("--help") || args.includes("-h");
+  const helpTarget = wantsHelp ? args[0] : args[0] === "help" ? args[1] : undefined;
+  if (helpTarget && CMD_HELP[helpTarget]) {
+    console.log(CMD_HELP[helpTarget]);
+    return 0;
+  }
+  if (wantsHelp || args[0] === "help") {
+    // asked for help on something unknown to the help table: fall through to
+    // command dispatch so e.g. "bansos bogus --help" still errors normally
+    if (args.length <= 1) {
+      help();
+      return 0;
+    }
+  }
+
+  switch (args[0]) {
     case "setup":
-      return runSetup(argv.slice(1));
+      return runSetup(args.slice(1));
     case "start":
-      return runStart(argv.slice(1));
+      return runStart(args.slice(1));
     case "stop":
       return runStop();
     case "logs":
       return runLogs();
     case "status":
-      return runStatus();
+      return runStatus(json);
     case "ping":
-      return runPing(argv.slice(1));
+      return runPing(json ? [...args.slice(1), "--json"] : args.slice(1));
     case "models":
     case "refresh":
-      return runStatusOrModels(argv[0]);
+      return runStatusOrModels(args[0], json);
     case "relay":
-      return runRelay(argv.slice(1));
+      return runRelay(args.slice(1));
     case "doctor":
-      return runDoctor(argv.slice(1));
+      return runDoctor(args.slice(1));
     case "--version":
     case "-v":
       console.log(VERSION);
@@ -79,7 +238,7 @@ async function main(): Promise<number> {
       help();
       return 0;
     default:
-      console.error(`bansos: unknown command "${argv[0]}"`);
+      console.error(`bansos: unknown command "${args[0]}"`);
       help();
       return 1;
   }
@@ -292,9 +451,13 @@ async function probeDaemonPorts(): Promise<DaemonStatus[]> {
     .sort((a, b) => a.port - b.port);
 }
 
-async function runStatus(): Promise<number> {
+async function runStatus(json: boolean): Promise<number> {
   const daemons = await probeDaemonPorts();
   if (daemons.length === 0) {
+    if (json) {
+      console.log(JSON.stringify({ ok: false, daemons: [] }));
+      return 1;
+    }
     console.error(
       `bansos: no daemon reachable (probed ports ${DEFAULT_PORT}-${MAX_PORT}), start one with "bansos start"`,
     );
@@ -303,6 +466,15 @@ async function runStatus(): Promise<number> {
       console.log(`\nUpdate available: ${update.current} -> ${update.latest} (run: npm i -g bansos-router)`);
     }
     return 1;
+  }
+  const update = await checkUpdate();
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      daemons,
+      ...(update.hasUpdate ? { updateAvailable: update.latest } : {}),
+    }));
+    return 0;
   }
   for (const [i, d] of daemons.entries()) {
     console.log(`daemon:   ok (port ${d.port})`);
@@ -315,14 +487,13 @@ async function runStatus(): Promise<number> {
     console.log(`alive:    ${d.models.join(", ") || "(none)"}`);
     if (i < daemons.length - 1) console.log("");
   }
-  const update = await checkUpdate();
   if (update.hasUpdate) {
     console.log(`\nUpdate available: ${update.current} -> ${update.latest} (run: npm i -g bansos-router)`);
   }
   return 0;
 }
 
-async function runStatusOrModels(cmd: "status" | "models" | "refresh"): Promise<number> {
+async function runStatusOrModels(cmd: "status" | "models" | "refresh", json: boolean): Promise<number> {
   const config = await import("../daemon/state").then((m) => m.loadConfig());
   const base = `http://127.0.0.1:${config.port}`;
 
@@ -330,16 +501,25 @@ async function runStatusOrModels(cmd: "status" | "models" | "refresh"): Promise<
     if (cmd === "models") {
       const res = await fetch(`${base}/v1/models`);
       const body = (await res.json()) as { data: Array<{ id: string }> };
+      if (json) {
+        console.log(JSON.stringify(body));
+        return 0;
+      }
       for (const m of body.data) console.log(m.id);
       return 0;
     }
     // refresh: ask the daemon to re-run health checks now
     const res = await fetch(`${base}/bansos/refresh`, { method: "POST" });
     const body = (await res.json()) as { modelCount: number; alive: number };
+    if (json) {
+      console.log(JSON.stringify(body));
+      return 0;
+    }
     console.log(`refreshed: ${body.modelCount} model(s), ${body.alive} alive`);
     return 0;
   } catch {
-    console.error(`bansos: daemon not reachable at ${base} — start it with "bansos start"`);
+    if (json) console.log(JSON.stringify({ ok: false, error: `daemon not reachable at ${base}` }));
+    else console.error(`bansos: daemon not reachable at ${base} — start it with "bansos start"`);
     return 1;
   }
 }
