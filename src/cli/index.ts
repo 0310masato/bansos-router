@@ -358,12 +358,17 @@ function isAlive(pid: number): boolean {
 function findDaemonPids(statePid: number | null): number[] {
   const pids = new Set<number>();
   if (statePid && isAlive(statePid)) pids.add(statePid);
-  for (const entry of fs.readdirSync("/proc")) {
+  const procRoot = "/proc";
+  if (!fs.existsSync(procRoot)) return [...pids];
+
+  for (const entry of fs.readdirSync(procRoot)) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
     if (pids.has(pid)) continue;
     try {
-      const args = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0").filter(Boolean);
+      const args = fs.readFileSync(path.join(procRoot, entry, "cmdline"), "utf8")
+        .split("\0")
+        .filter(Boolean);
       if (isDaemonCmdline(args)) pids.add(pid);
     } catch {
       // process vanished mid-scan
