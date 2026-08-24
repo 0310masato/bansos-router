@@ -413,6 +413,34 @@ function isExternalUpstream(upstream: Upstream): boolean {
   }
 }
 
+function selectFailover(
+  catalog: RuntimeCatalog,
+  current: ModelDef,
+  currentUpstream: Upstream,
+  tried: ReadonlySet<string>,
+  security: SecurityConfig,
+  failoverAllowed: boolean,
+  status: number,
+  requestStartedAt: number,
+  log: Logger,
+): ModelDef | undefined {
+  if (!failoverAllowed) {
+    log.warn("upstream rejected", {
+      model: current.id,
+      upstream: currentUpstream.id,
+      status,
+      durationMs: Date.now() - requestStartedAt,
+      failoverBlocked: true,
+    });
+    return undefined;
+  }
+
+  return pickFailover(catalog, current, tried, (candidate) => {
+    const candidateUpstream = catalog.upstreamBySource(candidate.source);
+    return Boolean(candidateUpstream && isUpstreamAllowed(security, candidateUpstream.id));
+  });
+}
+
 async function runChatForward(
   req: http.IncomingMessage,
   catalog: RuntimeCatalog,
@@ -505,21 +533,10 @@ async function runChatForward(
       }, isRelayAllowed(security));
     } catch {
       transientError = { status: 502, message: "upstream request failed" };
-      const next = failoverAllowed
-        ? pickFailover(catalog, current, tried, (candidate) => {
-            const candidateUpstream = catalog.upstreamBySource(candidate.source);
-            return Boolean(candidateUpstream && isUpstreamAllowed(security, candidateUpstream.id));
-          })
-        : undefined;
-      if (!failoverAllowed) {
-        log.warn("upstream rejected", {
-          model: current.id,
-          upstream: currentUpstream.id,
-          status: 502,
-          durationMs: Date.now() - requestStartedAt,
-          failoverBlocked: true,
-        });
-      }
+      const next = selectFailover(
+        catalog, current, currentUpstream, tried, security, failoverAllowed,
+        502, requestStartedAt, log,
+      );
       if (!next) break;
       tried.add(next.id);
       current = next;
@@ -551,21 +568,10 @@ async function runChatForward(
       }
 
       transientError = { status: upstreamRes.status, message: errorMsg };
-      const next = failoverAllowed
-        ? pickFailover(catalog, current, tried, (candidate) => {
-            const candidateUpstream = catalog.upstreamBySource(candidate.source);
-            return Boolean(candidateUpstream && isUpstreamAllowed(security, candidateUpstream.id));
-          })
-        : undefined;
-      if (!failoverAllowed) {
-        log.warn("upstream rejected", {
-          model: current.id,
-          upstream: currentUpstream.id,
-          status: upstreamRes.status,
-          durationMs: Date.now() - requestStartedAt,
-          failoverBlocked: true,
-        });
-      }
+      const next = selectFailover(
+        catalog, current, currentUpstream, tried, security, failoverAllowed,
+        upstreamRes.status, requestStartedAt, log,
+      );
       if (!next) break;
       tried.add(next.id);
       current = next;

@@ -26,7 +26,7 @@ const KNOWN_SECRET_PATTERNS: ReadonlyArray<{
   },
   {
     type: "github_pat",
-    pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/,
+    pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,})\b/,
   },
   {
     type: "aws_access_key",
@@ -56,14 +56,31 @@ const SENSITIVE_KEYS = new Set([
   "signingsecret",
 ]);
 
-const INLINE_ASSIGNMENT =
-  /\b(password|passwd|pwd|token|access[_-]?token|auth[_-]?token|refresh[_-]?token|api[_-]?key|secret|client[_-]?secret|signing[_-]?secret)\b\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/gi;
+const INLINE_ASSIGNMENTS = [
+  /\b([\w-]+)\s*[:=]\s*"([^"]+)"/gi,
+  /\b([\w-]+)\s*[:=]\s*'([^']+)'/gi,
+  /\b([\w-]+)\s*[:=]\s*([^\s,;'"}]+)/gi,
+];
 
-const PLACEHOLDER_VALUE = /^(?:example|sample|test|dummy|placeholder|redacted|masked|changeme|password|secret|token|api[_-]?key|your(?:[-_ ].+)?|none|null|undefined|bansos|x+|\*+|<[^>]+>|\$\{[^}]+\}|process\.env\.[A-Za-z0-9_]+)$/i;
+const PLACEHOLDER_VALUES = new Set([
+  "example", "sample", "test", "dummy", "placeholder", "redacted", "masked",
+  "changeme", "password", "secret", "token", "api_key", "api-key", "none",
+  "null", "undefined", "bansos",
+]);
+
+function isPlaceholderValue(value: string): boolean {
+  const lower = value.toLowerCase();
+  if (PLACEHOLDER_VALUES.has(lower)) return true;
+  if (lower === "your" || lower.startsWith("your-") || lower.startsWith("your_") || lower.startsWith("your ")) return true;
+  if (/^[x*]+$/i.test(value)) return true;
+  if (value.startsWith("<") && value.endsWith(">")) return true;
+  if (value.startsWith("${") && value.endsWith("}")) return true;
+  return /^process\.env\.\w+$/i.test(value);
+}
 
 function isLikelyCredentialValue(value: string): boolean {
   const clean = value.trim().replace(/^["']|["']$/g, "");
-  if (clean.length < 8 || PLACEHOLDER_VALUE.test(clean)) return false;
+  if (clean.length < 8 || isPlaceholderValue(clean)) return false;
   if (/\s/.test(clean) && clean.length < 16) return false;
   return true;
 }
@@ -73,10 +90,15 @@ function inspectString(value: string, found: Set<SecretType>): void {
     if (pattern.test(value)) found.add(type);
   }
 
-  INLINE_ASSIGNMENT.lastIndex = 0;
-  for (let match = INLINE_ASSIGNMENT.exec(value); match; match = INLINE_ASSIGNMENT.exec(value)) {
-    const assigned = match[2] ?? match[3] ?? match[4] ?? "";
-    if (isLikelyCredentialValue(assigned)) found.add("credential_assignment");
+  for (const pattern of INLINE_ASSIGNMENTS) {
+    pattern.lastIndex = 0;
+    for (let match = pattern.exec(value); match; match = pattern.exec(value)) {
+      const key = match[1] ?? "";
+      const assigned = match[2] ?? "";
+      if (SENSITIVE_KEYS.has(normalizeKey(key)) && isLikelyCredentialValue(assigned)) {
+        found.add("credential_assignment");
+      }
+    }
   }
 }
 
@@ -124,6 +146,6 @@ export function scanRequestBody(body: unknown): SecretScanResult {
 
   const found = new Set<SecretType>();
   inspectValue(parsed, found, new WeakSet<object>());
-  const secretTypes = [...found].sort();
+  const secretTypes = [...found].sort((a, b) => a.localeCompare(b));
   return { blocked: secretTypes.length > 0, secretTypes };
 }

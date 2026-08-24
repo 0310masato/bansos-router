@@ -201,6 +201,8 @@ test("secret guard detects required credential classes and avoids common placeho
   assert.deepEqual(scanRequestBody(encryptedPrivateKey).secretTypes, ["private_key"]);
   assert.deepEqual(scanRequestBody(sshKey).secretTypes, ["ssh_private_key"]);
   assert.equal(scanRequestBody("password = Sup3rSyntheticValue").blocked, true);
+  assert.equal(scanRequestBody('token: "Synthetic credential value"').blocked, true);
+  assert.equal(scanRequestBody('notes: "Synthetic credential value"').blocked, false);
 
   for (const normal of [
     "Explain why passwords should never be pasted into prompts.",

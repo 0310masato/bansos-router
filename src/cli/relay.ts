@@ -6,6 +6,7 @@ import {
   loadRelayState,
   removeRelay,
   saveRelayState,
+  type RelayState,
 } from "../relay/egress";
 
 function usage(): void {
@@ -22,6 +23,38 @@ Commands:
 `);
 }
 
+function relayLabelSuffix(label?: string): string {
+  return label ? `  [${label}]` : "";
+}
+
+function runStrictRelay(cmd: string | undefined, state: RelayState): number {
+  switch (cmd) {
+    case "status":
+      console.log("enabled: off (locked by strict security mode)");
+      console.log(`active:  ${state.url || "(none)"} (ignored)`);
+      console.log(`saved:   ${state.relays.length}`);
+      return 0;
+    case "list":
+      for (const relay of state.relays) {
+        console.log(`  ${relay.url}${relayLabelSuffix(relay.label)}`);
+      }
+      return 0;
+    case "off":
+      saveRelayState({ ...state, enabled: false });
+      console.log("relay disabled and locked by strict security mode");
+      return 0;
+    case "help":
+    case "-h":
+    case undefined:
+      usage();
+      console.log("\nRelay mutation and egress are disabled while security.mode is strict.");
+      return 0;
+    default:
+      console.error(`bansos relay ${cmd}: rejected by strict security mode`);
+      return 1;
+  }
+}
+
 export async function runRelay(
   argv: string[],
   security: SecurityConfig = loadConfig().security,
@@ -30,29 +63,7 @@ export async function runRelay(
   const state = loadRelayState();
 
   if (isStrictSecurity(security)) {
-    if (cmd === "status") {
-      console.log("enabled: off (locked by strict security mode)");
-      console.log(`active:  ${state.url || "(none)"} (ignored)`);
-      console.log(`saved:   ${state.relays.length}`);
-      return 0;
-    }
-    if (cmd === "list") {
-      for (const relay of state.relays) console.log(`  ${relay.url}${relay.label ? `  [${relay.label}]` : ""}`);
-      return 0;
-    }
-    if (cmd === "off") {
-      saveRelayState({ ...state, enabled: false });
-      console.log("relay disabled and locked by strict security mode");
-      return 0;
-    }
-    if (cmd === "help" || cmd === "-h" || cmd === undefined) {
-      usage();
-      console.log("\nRelay mutation and egress are disabled while security.mode is strict.");
-      return 0;
-    }
-
-    console.error(`bansos relay ${cmd}: rejected by strict security mode`);
-    return 1;
+    return runStrictRelay(cmd, state);
   }
 
   switch (cmd) {
@@ -94,7 +105,7 @@ export async function runRelay(
     }
     case "list": {
       for (const r of state.relays) {
-        console.log(`${r.url === state.url ? "★" : " "} ${r.url}${r.label ? `  [${r.label}]` : ""}`);
+        console.log(`${r.url === state.url ? "★" : " "} ${r.url}${relayLabelSuffix(r.label)}`);
       }
       return 0;
     }

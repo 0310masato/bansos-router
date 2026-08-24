@@ -79,7 +79,9 @@ function safeFields(
     }
     safe[key] = value;
   }
-  if (detectedTypes.size > 0) safe.secretTypes = [...detectedTypes].sort();
+  if (detectedTypes.size > 0) {
+    safe.secretTypes = [...detectedTypes].sort((a, b) => a.localeCompare(b));
+  }
   return Object.keys(safe).length > 0 ? safe : undefined;
 }
 
@@ -96,7 +98,7 @@ export function createLogger(opts: LoggerOptions = {}): Logger {
     const filteredFields = safeFields(fields, messageScan.secretTypes);
     if (json) {
       process.stdout.write(
-        `${JSON.stringify({ timestamp: new Date().toISOString(), level: lvl, msg: safeMessage, ...(filteredFields ?? {}) })}\n`,
+        `${JSON.stringify({ timestamp: new Date().toISOString(), level: lvl, msg: safeMessage, ...filteredFields })}\n`,
       );
     } else {
       const tag = lvl === "error" ? "✗" : lvl === "warn" ? "⚠" : lvl === "debug" ? "·" : "✓";

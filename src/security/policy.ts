@@ -55,7 +55,7 @@ export function isLoopbackBind(bind: string): boolean {
     return address.split(".")[0] === "127";
   }
 
-  const mappedIpv4 = address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  const mappedIpv4 = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(address);
   if (mappedIpv4) return isLoopbackBind(mappedIpv4[1]!);
   return isIP(address) === 6 && IPV6_LOOPBACK.check(address, "ipv6");
 }
