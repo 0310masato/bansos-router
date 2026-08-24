@@ -108,6 +108,60 @@ required, both the risk and the override must be explicit via
 `--unsafe-allow-non-loopback` or
 `security.unsafeAllowNonLoopbackBind: true`.
 
+## Task-aware model routing
+
+Automatic routing is opt-in so existing model-pinned clients keep the same
+behavior. Enable it in `~/.bansos/config.json`, then request the virtual model
+`bansos/auto`:
+
+```json
+{
+  "routing": {
+    "enabled": true,
+    "strategy": "balanced",
+    "upstreamPriority": ["zen", "kilo", "llm7"]
+  }
+}
+```
+
+For example, `bansos setup codex --model bansos/auto` configures Codex to use
+the task router after the daemon has been restarted with that setting.
+
+The router classifies each request locally; it does not call another AI or
+send the prompt anywhere for classification. It first filters providers using
+the strict-security allowlist, then checks required input/output capacity and
+capabilities before selecting the smallest adequate model for the configured
+strategy.
+
+| Detected work | Minimum tier | Selection preference |
+|---|---|---|
+| Translation, formatting, short summaries | light | Small general model |
+| Ordinary Q&A and drafting | standard | General model |
+| Code implementation and debugging | standard/advanced | Code-affine model |
+| Architecture, audit, comparison, multi-step reasoning | advanced | Reasoning model |
+| Very large request context | advanced | Sufficient context and output limits |
+| Image input | standard/advanced | Image-capable model only |
+
+`strategy` may be `efficiency`, `balanced`, or `quality`. Provider order is
+controlled by `upstreamPriority`; it never bypasses
+`security.allowedUpstreams`. An explicit model ID remains pinned and is never
+silently replaced by task routing. Automatic cross-provider recovery after an
+upstream error remains governed separately by the strict failover policy.
+
+To inspect a decision without contacting any provider, POST the same request
+body to the local preview endpoint:
+
+```bash
+curl http://127.0.0.1:17070/bansos/route/preview \
+  -H "content-type: application/json" \
+  -d '{"model":"bansos/auto","messages":[{"role":"user","content":"Implement and test a TypeScript parser."}]}'
+```
+
+Successful automatically routed responses include `x-bansos-task`,
+`x-bansos-required-tier`, `x-bansos-selected-model`, and
+`x-bansos-model-fit` headers. The preview response and logs contain the
+classification and model metadata, not prompt or tool-output text.
+
 Supported harnesses for `bansos setup`: `claude-code`, `aider`, `opencode`,
 `hermes`, `goose`, `openclaw`, `antigravity`, `jcode`, `9router`, `continue`, `cline`, `roo`.
 pi is handled by the separate extension. `codex` writes its config too; its

@@ -13,6 +13,11 @@ export interface DaemonStatus {
     allowedUpstreams: string[];
     allowCrossProviderFailover: boolean;
   };
+  routing?: {
+    enabled: boolean;
+    strategy: "efficiency" | "balanced" | "quality";
+    upstreamPriority: string[];
+  };
 }
 
 export interface ModelItem {

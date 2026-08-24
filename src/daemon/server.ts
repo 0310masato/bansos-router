@@ -14,6 +14,13 @@ import {
   type SecurityConfig,
 } from "../security/policy";
 import { scanRequestBody, type SecretType } from "../security/secret-guard";
+import {
+  AUTO_MODEL_ID,
+  DEFAULT_ROUTING_CONFIG,
+  decideRoute,
+  type RoutingConfig,
+  type RoutingDecision,
+} from "../routing/task-router";
 import type { ModelDef, Upstream } from "../upstreams/types";
 import { parseChatTurn, sanitizeChatBody } from "../protocols/openai-chat";
 import { parseResponsesTurn, renderResponse, ResponsesStreamEncoder } from "../protocols/responses";
@@ -47,6 +54,7 @@ export interface StatusPayload {
     allowedUpstreams: string[];
     allowCrossProviderFailover: boolean;
   };
+  routing?: RoutingConfig;
 }
 
 export interface ServerOptions {
@@ -56,6 +64,7 @@ export interface ServerOptions {
   log: Logger;
   startedAt: number;
   security?: SecurityConfig;
+  routing?: RoutingConfig;
 }
 
 const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
@@ -100,6 +109,8 @@ const API_EXACT_PATHS = new Set([
   "/bansos/status/",
   "/bansos/refresh",
   "/bansos/refresh/",
+  "/bansos/route/preview",
+  "/bansos/route/preview/",
   "/bansos/adapters",
   "/bansos/adapters/",
   "/bansos/adapters/render",
@@ -143,6 +154,7 @@ const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-expose-headers": "x-bansos-task, x-bansos-required-tier, x-bansos-selected-model, x-bansos-model-fit",
 } as const;
 
 const MIME_TYPES: Record<string, string> = {
@@ -391,17 +403,66 @@ export function pickFailover(
   }
   return best;
 }
-// shared forward+failover core used by both /v1/chat/completions and
-// /v1/responses. resolves the model, sanitizes, then retries the chosen
+// shared routing+forward+failover core used by all three wire protocols.
+// resolves the model, applies strict policy, then retries the chosen
 // upstream with failover on 429/5xx. returns the final upstream Response plus
 // the model that served it, or a terminal error to forward to the client.
-type ForwardResult = { response: Response; model: ModelDef; upstream: Upstream };
+type ForwardResult = {
+  response: Response;
+  model: ModelDef;
+  upstream: Upstream;
+  routingDecision?: RoutingDecision;
+};
 type ForwardError = {
   status: number;
   message: string;
-  type?: "upstream_error" | "security_policy_error";
+  type?: "upstream_error" | "security_policy_error" | "routing_policy_error";
   secretTypes?: SecretType[];
 };
+
+function routingContext(
+  catalog: RuntimeCatalog,
+  security: SecurityConfig,
+  routing: RoutingConfig,
+) {
+  return {
+    models: catalog.models,
+    upstreamId: (candidate: ModelDef) => catalog.upstreamBySource(candidate.source)?.id,
+    security,
+    routing,
+  };
+}
+
+function routingHeaders(decision: RoutingDecision | undefined): Record<string, string> {
+  if (!decision?.selectedModel || !decision.selectedFit) return {};
+  return {
+    "x-bansos-task": decision.analysis.task,
+    "x-bansos-required-tier": decision.analysis.requiredTier,
+    "x-bansos-selected-model": safeRoutingHeaderValue(decision.selectedModel),
+    "x-bansos-model-fit": decision.selectedFit,
+  };
+}
+
+function safeRoutingHeaderValue(value: string): string {
+  if (/^[\x20-\x7e]+$/.test(value) && Buffer.byteLength(value, "utf8") <= 1_024) {
+    return value;
+  }
+
+  const encoded = Buffer.from(value, "utf8").toString("base64url");
+  if (encoded.length <= 1_014) return `base64url:${encoded}`;
+  return `omitted:${Buffer.byteLength(value, "utf8")}`;
+}
+
+function originalModelForLog(
+  catalog: RuntimeCatalog,
+  requestedModel: string,
+  decision: RoutingDecision | undefined,
+  servedModel: ModelDef,
+): ModelDef {
+  return catalog.resolve(requestedModel) ??
+    (decision?.selectedModel ? catalog.resolve(decision.selectedModel) : undefined) ??
+    servedModel;
+}
 
 function isExternalUpstream(upstream: Upstream): boolean {
   try {
@@ -446,12 +507,41 @@ async function runChatForward(
   catalog: RuntimeCatalog,
   log: Logger,
   security: SecurityConfig,
+  routing: RoutingConfig,
   parsedModel: string,
   sanitizedBody: Record<string, unknown>,
+  routingBody: unknown = sanitizedBody,
 ): Promise<ForwardResult | ForwardError> {
-  const model = catalog.resolve(parsedModel);
+  let effectiveModel = parsedModel;
+  let routingDecision: RoutingDecision | undefined;
+  if (routing.enabled || parsedModel === AUTO_MODEL_ID) {
+    if (parsedModel === AUTO_MODEL_ID && !routing.enabled) {
+      return {
+        status: 400,
+        type: "routing_policy_error",
+        message: "automatic model routing is disabled; set routing.enabled=true or request a model explicitly",
+      };
+    }
+    routingDecision = decideRoute(
+      routingBody,
+      parsedModel,
+      routingContext(catalog, security, routing),
+    );
+    if (parsedModel === AUTO_MODEL_ID) {
+      if (!routingDecision.selectedModel) {
+        return {
+          status: 503,
+          type: "routing_policy_error",
+          message: "no allowed model satisfies this request; review provider allowlist and model capabilities",
+        };
+      }
+      effectiveModel = routingDecision.selectedModel;
+    }
+  }
+
+  const model = catalog.resolve(effectiveModel);
   if (!model) {
-    return { status: 400, message: `unknown model: ${parsedModel}` };
+    return { status: 400, message: `unknown model: ${effectiveModel}` };
   }
   const upstream = catalog.upstreamBySource(model.source);
   if (!upstream) {
@@ -459,6 +549,15 @@ async function runChatForward(
   }
 
   const requestStartedAt = Date.now();
+  if (routingDecision) {
+    log.info("routing decision", {
+      model: model.id,
+      upstream: upstream.id,
+      task: routingDecision.analysis.task,
+      requiredTier: routingDecision.analysis.requiredTier,
+      modelFit: routingDecision.selectedFit,
+    });
+  }
   const relay = loadRelayState();
   const failoverAllowed =
     req.headers["x-bansos-no-failover"] !== "1" &&
@@ -501,7 +600,15 @@ async function runChatForward(
       "content-type": "application/json",
       ...currentUpstream.requestHeaders(current),
     });
-    const outboundBody = JSON.stringify({ ...sanitizedBody, model: current.id });
+    const outbound: Record<string, unknown> = { ...sanitizedBody, model: current.id };
+    if (
+      parsedModel === AUTO_MODEL_ID &&
+      typeof outbound.max_tokens === "number" &&
+      outbound.max_tokens > current.maxTokens
+    ) {
+      outbound.max_tokens = current.maxTokens;
+    }
+    const outboundBody = JSON.stringify(outbound);
 
     if (isStrictSecurity(security) && isExternalUpstream(currentUpstream)) {
       const secretScan = scanRequestBody(outboundBody);
@@ -579,7 +686,12 @@ async function runChatForward(
       continue;
     }
 
-    return { response: upstreamRes, model: current, upstream: currentUpstream };
+    return {
+      response: upstreamRes,
+      model: current,
+      upstream: currentUpstream,
+      routingDecision,
+    };
   }
 
   return transientError ?? { status: 502, message: "no upstream candidates left" };
@@ -591,6 +703,7 @@ async function handleChat(
   catalog: RuntimeCatalog,
   log: Logger,
   security: SecurityConfig,
+  routing: RoutingConfig,
 ): Promise<void> {
   let bodyText: string;
   try {
@@ -628,8 +741,10 @@ async function handleChat(
     catalog,
     log,
     security,
+    routing,
     parsed.value.model,
     sanitizedBody,
+    body,
   );
   if ("status" in result) {
     sendJson(res, result.status, {
@@ -639,8 +754,18 @@ async function handleChat(
     return;
   }
 
-  const { response: upstreamRes, model: current, upstream: currentUpstream } = result;
-  const model = catalog.resolve(parsed.value.model) ?? current;
+  const {
+    response: upstreamRes,
+    model: current,
+    upstream: currentUpstream,
+    routingDecision,
+  } = result;
+  const model = originalModelForLog(
+    catalog,
+    parsed.value.model,
+    routingDecision,
+    current,
+  );
   log.info("chat → upstream", {
     model: current.id,
     upstream: currentUpstream.id,
@@ -649,7 +774,11 @@ async function handleChat(
 
   // 2xx: forward the response, capturing token usage on the way
   const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
-  res.writeHead(upstreamRes.status, { "content-type": contentType, ...CORS_HEADERS });
+  res.writeHead(upstreamRes.status, {
+    "content-type": contentType,
+    ...CORS_HEADERS,
+    ...routingHeaders(routingDecision),
+  });
 
   if (!parsed.value.stream) {
     // non-stream: buffer once to read usage, then forward the exact bytes
@@ -692,6 +821,7 @@ async function handleResponses(
   catalog: RuntimeCatalog,
   log: Logger,
   security: SecurityConfig,
+  routing: RoutingConfig,
 ): Promise<void> {
   let bodyText: string;
   try {
@@ -766,8 +896,10 @@ async function handleResponses(
     catalog,
     log,
     security,
+    routing,
     parsed.value.model,
     sanitizedBody,
+    body,
   );
   if ("status" in result) {
     sendJson(res, result.status, {
@@ -777,8 +909,18 @@ async function handleResponses(
     return;
   }
 
-  const { response: upstreamRes, model: current, upstream: currentUpstream } = result;
-  const resolved = catalog.resolve(parsed.value.model) ?? current;
+  const {
+    response: upstreamRes,
+    model: current,
+    upstream: currentUpstream,
+    routingDecision,
+  } = result;
+  const resolved = originalModelForLog(
+    catalog,
+    parsed.value.model,
+    routingDecision,
+    current,
+  );
   log.info("responses → upstream", {
     model: current.id,
     upstream: currentUpstream.id,
@@ -806,7 +948,11 @@ async function handleResponses(
       log.info("responses done", fields);
     }
     const out = renderResponse(json, current.id);
-    res.writeHead(upstreamRes.status, { "content-type": "application/json", ...CORS_HEADERS });
+    res.writeHead(upstreamRes.status, {
+      "content-type": "application/json",
+      ...CORS_HEADERS,
+      ...routingHeaders(routingDecision),
+    });
     res.end(JSON.stringify(out));
     return;
   }
@@ -817,6 +963,7 @@ async function handleResponses(
     "cache-control": "no-cache",
     "connection": "keep-alive",
     ...CORS_HEADERS,
+    ...routingHeaders(routingDecision),
   });
   const encoder = new ResponsesStreamEncoder();
   let first = true;
@@ -858,6 +1005,7 @@ async function handleAnthropic(
   catalog: RuntimeCatalog,
   log: Logger,
   security: SecurityConfig,
+  routing: RoutingConfig,
 ): Promise<void> {
   let bodyText: string;
   try {
@@ -881,25 +1029,19 @@ async function handleAnthropic(
     return;
   }
 
-  const model = catalog.resolve(parsed.value.model);
-  if (!model) {
-    sendAnthropicError(res, 400, `unknown model: ${parsed.value.model}`);
-    return;
-  }
-
-  const upstream = catalog.upstreamBySource(model.source);
-  if (!upstream) {
-    sendAnthropicError(res, 502, `no upstream for source: ${model.source}`);
-    return;
-  }
+  const requestedModel = catalog.resolve(parsed.value.model);
 
   const requestStartedAt = Date.now();
   const chatBody = parsed.value.chatBody as Record<string, unknown>;
-  chatBody.model = model.id;
+  chatBody.model = parsed.value.model;
   // defensive cap: pin max_tokens to the model's actual limit so a stale
   // client value (or wrong metadata) never reaches the upstream
-  if (typeof chatBody.max_tokens === "number" && chatBody.max_tokens > model.maxTokens) {
-    chatBody.max_tokens = model.maxTokens;
+  if (
+    requestedModel &&
+    typeof chatBody.max_tokens === "number" &&
+    chatBody.max_tokens > requestedModel.maxTokens
+  ) {
+    chatBody.max_tokens = requestedModel.maxTokens;
   }
 
   const result = await runChatForward(
@@ -907,15 +1049,28 @@ async function handleAnthropic(
     catalog,
     log,
     security,
+    routing,
     parsed.value.model,
     chatBody,
+    body,
   );
   if ("status" in result) {
     sendAnthropicError(res, result.status, result.message, result.secretTypes);
     return;
   }
 
-  const { response: upstreamRes, model: current, upstream: currentUpstream } = result;
+  const {
+    response: upstreamRes,
+    model: current,
+    upstream: currentUpstream,
+    routingDecision,
+  } = result;
+  const originalModel = originalModelForLog(
+    catalog,
+    parsed.value.model,
+    routingDecision,
+    current,
+  );
   log.info("anthropic → upstream", {
     model: current.id,
     upstream: currentUpstream.id,
@@ -940,10 +1095,17 @@ async function handleAnthropic(
         durationMs: Date.now() - requestStartedAt,
         ...usage,
       };
-      if (current.id !== model.id) fields.failoverFrom = model.id;
+      if (current.id !== originalModel.id) fields.failoverFrom = originalModel.id;
       log.info("anthropic done", fields);
     }
-    sendJson(res, upstreamRes.status === 200 ? 200 : upstreamRes.status, message);
+    const payload = JSON.stringify(message);
+    res.writeHead(upstreamRes.status === 200 ? 200 : upstreamRes.status, {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(payload),
+      ...CORS_HEADERS,
+      ...routingHeaders(routingDecision),
+    });
+    res.end(payload);
     return;
   }
 
@@ -952,6 +1114,7 @@ async function handleAnthropic(
     "cache-control": "no-cache",
     "connection": "keep-alive",
     ...CORS_HEADERS,
+    ...routingHeaders(routingDecision),
   });
   const encoder = new AnthropicStreamEncoder();
   let streamUsage: TokenUsage | null = null;
@@ -984,7 +1147,7 @@ async function handleAnthropic(
       durationMs: Date.now() - requestStartedAt,
       ...streamUsage,
     };
-    if (current.id !== model.id) fields.failoverFrom = model.id;
+    if (current.id !== originalModel.id) fields.failoverFrom = originalModel.id;
     log.info("anthropic done", fields);
   }
   res.end();
@@ -1003,9 +1166,49 @@ function sendAnthropicError(
   });
 }
 
+async function handleRoutePreview(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  catalog: RuntimeCatalog,
+  security: SecurityConfig,
+  routing: RoutingConfig,
+): Promise<void> {
+  let bodyText: string;
+  try {
+    bodyText = await readBody(req);
+  } catch {
+    sendJson(res, 413, { error: { message: "request body too large" } });
+    return;
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    sendJson(res, 400, { error: { message: "invalid JSON body" } });
+    return;
+  }
+
+  const requestedModel =
+    body && typeof body === "object" && typeof (body as { model?: unknown }).model === "string"
+      ? (body as { model: string }).model
+      : AUTO_MODEL_ID;
+  const decision = decideRoute(
+    body,
+    requestedModel,
+    routingContext(catalog, security, routing),
+  );
+  sendJson(res, 200, {
+    routingEnabled: routing.enabled,
+    strategy: routing.strategy,
+    ...decision,
+  });
+}
+
 export function createServer(opts: ServerOptions): http.Server {
   const { catalog, rateLimiter, port, log, startedAt } = opts;
   const security = opts.security ?? DEFAULT_SECURITY_CONFIG;
+  const routing = opts.routing ?? DEFAULT_ROUTING_CONFIG;
 
   const visibleRelayState = () => {
     const relay = loadRelayState();
@@ -1051,9 +1254,20 @@ export function createServer(opts: ServerOptions): http.Server {
     const url = cleanUrl.replace(/\/+$/, "");
 
     if (method === "GET" && (url === "/v1/models" || url === "/models")) {
+      const automaticModel = routing.enabled
+        ? [{
+            id: AUTO_MODEL_ID,
+            object: "model",
+            created: 0,
+            owned_by: "bansos",
+            source: "bansos",
+            name: "Bansos Automatic Task Router",
+            reasoning: false,
+          }]
+        : [];
       sendJson(res, 200, {
         object: "list",
-        data: catalog.models.map((m) => ({
+        data: [...automaticModel, ...catalog.models.map((m) => ({
           id: m.id,
           object: "model",
           created: 0,
@@ -1065,7 +1279,7 @@ export function createServer(opts: ServerOptions): http.Server {
           max_tokens: m.maxTokens,
           maxTokens: m.maxTokens,
           reasoning: m.reasoning,
-        })),
+        }))],
       });
       return;
     }
@@ -1082,6 +1296,7 @@ export function createServer(opts: ServerOptions): http.Server {
           allowedUpstreams: security.allowedUpstreams,
           allowCrossProviderFailover: security.allowCrossProviderFailover,
         },
+        routing,
       });
       return;
     }
@@ -1100,6 +1315,7 @@ export function createServer(opts: ServerOptions): http.Server {
           allowedUpstreams: security.allowedUpstreams,
           allowCrossProviderFailover: security.allowCrossProviderFailover,
         },
+        routing,
       };
       sendJson(res, 200, payload);
       return;
@@ -1118,6 +1334,11 @@ export function createServer(opts: ServerOptions): http.Server {
         .catch((err: unknown) => {
           sendJson(res, 500, { error: { message: `refresh failed: ${String(err)}` } });
         });
+      return;
+    }
+
+    if (method === "POST" && url === "/bansos/route/preview") {
+      void handleRoutePreview(req, res, catalog, security, routing);
       return;
     }
 
@@ -1265,17 +1486,17 @@ export function createServer(opts: ServerOptions): http.Server {
     }
 
     if (method === "POST" && (url === "/v1/responses" || url === "/responses")) {
-      void handleResponses(req, res, catalog, log, security);
+      void handleResponses(req, res, catalog, log, security, routing);
       return;
     }
 
     if (method === "POST" && (url === "/v1/chat/completions" || url === "/chat/completions")) {
-      void handleChat(req, res, catalog, log, security);
+      void handleChat(req, res, catalog, log, security, routing);
       return;
     }
 
     if (method === "POST" && (url === "/v1/messages" || url === "/messages")) {
-      void handleAnthropic(req, res, catalog, log, security);
+      void handleAnthropic(req, res, catalog, log, security, routing);
       return;
     }
 

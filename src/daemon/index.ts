@@ -85,6 +85,7 @@ function startServer(
     log,
     startedAt,
     security: config.security,
+    routing: config.routing,
   });
 
   // initial health-check pass, then refresh on the configured interval

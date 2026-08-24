@@ -6,6 +6,11 @@ import {
   normalizeSecurityConfig,
   type SecurityConfig,
 } from "../security/policy";
+import {
+  DEFAULT_ROUTING_CONFIG,
+  normalizeRoutingConfig,
+  type RoutingConfig,
+} from "../routing/task-router";
 
 export const BANSOS_DIR = path.join(os.homedir(), ".bansos");
 
@@ -18,6 +23,7 @@ export interface BansosConfig {
   bind: string;
   refreshIntervalMs: number;
   security: SecurityConfig;
+  routing: RoutingConfig;
   // opt-in local gateways (freebuff-proxy, litellm, ...)
   localUpstreams: Array<{ name: string; baseUrl: string; apiKey?: string }>;
 }
@@ -27,6 +33,10 @@ export const DEFAULT_CONFIG: BansosConfig = {
   bind: "127.0.0.1",
   refreshIntervalMs: 30 * 60_000,
   security: { ...DEFAULT_SECURITY_CONFIG },
+  routing: {
+    ...DEFAULT_ROUTING_CONFIG,
+    upstreamPriority: [...DEFAULT_ROUTING_CONFIG.upstreamPriority],
+  },
   localUpstreams: [],
 };
 
@@ -41,6 +51,7 @@ export function loadConfig(): BansosConfig {
       ...DEFAULT_CONFIG,
       ...raw,
       security: normalizeSecurityConfig(raw.security),
+      routing: normalizeRoutingConfig(raw.routing),
       localUpstreams: raw.localUpstreams ?? [],
     };
   } catch {
